@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useHub } from "@/lib/store"
 import { useAuth } from "@/lib/auth-provider"
 
@@ -38,6 +38,7 @@ export default function CalendarPage() {
   const [addingEvent, setAddingEvent] = useState(false)
   const [newEventTitle, setNewEventTitle] = useState("")
   const [notesLoading, setNotesLoading] = useState(false)
+  const fetchAbortRef = useRef<AbortController | null>(null)
 
   const dayEvents = events
     .filter(e => e.date === weekDates[selectedDay])
@@ -52,12 +53,21 @@ export default function CalendarPage() {
     : null
 
   useEffect(() => {
-    if (!selectedEvent || selectedEvent.notes !== undefined || notesLoading) return
+    // Cancel any in-flight fetch from a previous selection
+    fetchAbortRef.current?.abort()
+    fetchAbortRef.current = null
+    setNotesLoading(false)
+
+    if (!selectedEvent || selectedEvent.notes !== undefined) return
 
     if (!accessToken || accessToken === "mock-token") {
       setEventNotes(selectedEvent.id, "- Review any relevant materials beforehand\n- Allow buffer time for travel")
       return
     }
+
+    const controller = new AbortController()
+    fetchAbortRef.current = controller
+    const eventId = selectedEvent.id
 
     const nearbyEvents = dayEvents
       .filter(e => e.id !== selectedEvent.id)
@@ -66,6 +76,7 @@ export default function CalendarPage() {
     setNotesLoading(true)
     fetch("/api/calendar/event-notes", {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${accessToken}`,
@@ -83,12 +94,21 @@ export default function CalendarPage() {
     })
       .then(r => r.json())
       .then(data => {
-        setEventNotes(selectedEvent.id, data.notes ?? "- No prep notes available")
+        if (controller.signal.aborted) return
+        setEventNotes(eventId, data.notes ?? "- No prep notes available")
       })
-      .catch(() => {
-        setEventNotes(selectedEvent.id, "- Couldn't generate notes")
+      .catch(err => {
+        if (err.name === "AbortError") return
+        setEventNotes(eventId, "- Couldn't generate notes")
       })
-      .finally(() => setNotesLoading(false))
+      .finally(() => {
+        if (!controller.signal.aborted) setNotesLoading(false)
+      })
+
+    return () => {
+      controller.abort()
+      fetchAbortRef.current = null
+    }
   }, [selectedEventId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAddEvent = (e: React.FormEvent) => {
