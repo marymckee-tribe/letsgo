@@ -10,6 +10,8 @@ export type CalendarEvent = {
   time: string
   date: number
   location?: string
+  notes?: string           // undefined = not yet generated; string = cached (may be empty)
+  fromEmail?: boolean
   aiTravelBuffer?: string | null
   aiPrepSuggestion?: string | null
 }
@@ -24,6 +26,7 @@ export type Task = {
 export type GroceryItem = {
   id: string
   name: string
+  checked?: boolean
 }
 
 export type EntityProfile = {
@@ -72,6 +75,11 @@ interface HubState {
   toggleTask: (id: string) => void
   actOnEmailAction: (emailId: string, actionId: string) => void
   dismissEmailAction: (emailId: string, actionId: string) => void
+  setEventTitle: (id: string, title: string) => void
+  setEventTime: (id: string, time: string) => void
+  setEventLocation: (id: string, location: string) => void
+  setEventNotes: (id: string, notes: string) => void
+  toggleGrocery: (id: string) => void
 }
 
 const mockEvents: CalendarEvent[] = [
@@ -209,6 +217,26 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     toast("ACTION CONFIRMED", { description: `Added event: ${event.title}` })
   }
 
+  const setEventTitle = (id: string, title: string) => {
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, title } : e))
+  }
+
+  const setEventTime = (id: string, time: string) => {
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, time } : e))
+  }
+
+  const setEventLocation = (id: string, location: string) => {
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, location } : e))
+  }
+
+  const setEventNotes = (id: string, notes: string) => {
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, notes } : e))
+  }
+
+  const toggleGrocery = (id: string) => {
+    setGroceries(prev => prev.map(g => g.id === id ? { ...g, checked: !g.checked } : g))
+  }
+
   const addTask = (task: Task) => {
     setTasks(prev => [...prev, task])
     toast("ACTION CONFIRMED", { description: `Added task: ${task.title}` })
@@ -244,7 +272,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     if (actionItem) {
       const act = actionItem as EmailAction;
       if (act.type === 'CALENDAR_INVITE') {
-         addEvent({ id: Math.random().toString(), title: act.title, time: act.time || "12:00", date: act.date || 1 })
+         addEvent({ id: Math.random().toString(), title: act.title, time: act.time || "12:00", date: act.date || 1, fromEmail: true })
       } else if (act.type === 'TODO_ITEM') {
          addTask({ id: Math.random().toString(), title: act.title, context: act.context || "PERSONAL", completed: false })
       }
@@ -262,7 +290,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <HubContext.Provider value={{ events, scheduleInsights, tasks, groceries, emails, profiles, addEvent, addTask, addGrocery, toggleTask, actOnEmailAction, dismissEmailAction }}>
+    <HubContext.Provider value={{ events, scheduleInsights, tasks, groceries, emails, profiles, addEvent, addTask, addGrocery, toggleTask, actOnEmailAction, dismissEmailAction, setEventTitle, setEventTime, setEventLocation, setEventNotes, toggleGrocery }}>
       {children}
     </HubContext.Provider>
   )
