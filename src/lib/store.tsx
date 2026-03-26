@@ -21,6 +21,7 @@ export type Task = {
   title: string
   context: string
   completed: boolean
+  who?: string
 }
 
 export type GroceryItem = {

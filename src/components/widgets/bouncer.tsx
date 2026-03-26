@@ -16,7 +16,7 @@ export function Bouncer({ className }: { className?: string }) {
       </div>
       
       <div className="flex-1 overflow-y-auto space-y-6 pr-4">
-        <Accordion type="single" collapsible={"true" as any} className="w-full">
+        <Accordion className="w-full">
            {emails.length === 0 ? (
               <p className="text-black/40 text-sm italic font-serif">Inbox zero achieved.</p>
            ) : emails.map(email => (
