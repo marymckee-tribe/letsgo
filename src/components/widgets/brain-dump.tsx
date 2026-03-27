@@ -54,31 +54,26 @@ export function BrainDump({ className }: { className?: string }) {
       if (match) {
         try {
           const cmds = JSON.parse(match[1]);
-          let validExecution = false;
+          executedCommands.current.add(lastMsg.id); // guard before executing
 
           cmds.forEach((cmd: any) => {
             if (cmd.action === 'create_gcal_event') {
               hubState.addEvent({ id: Math.random().toString(), title: cmd.payload.title, time: cmd.payload.time, date: cmd.payload.date });
               pushLog(`Scheduled event: ${cmd.payload.title}`);
-              validExecution = true;
             }
             if (cmd.action === 'create_gtask') {
               hubState.addTask({ id: Math.random().toString(), title: cmd.payload.title, context: cmd.payload.context, completed: false });
               pushLog(`Created task: ${cmd.payload.title} [${cmd.payload.context}]`);
-              validExecution = true;
             }
             if (cmd.action === 'update_grocery_list') {
               hubState.addGrocery({ id: Math.random().toString(), name: cmd.payload.name });
               pushLog(`Added provision: ${cmd.payload.name}`);
-              validExecution = true;
             }
           });
-
-          if (validExecution) executedCommands.current.add(lastMsg.id);
         } catch(e) {}
       }
     }
-  }, [messages, isExpanded])
+  }, [messages])
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()

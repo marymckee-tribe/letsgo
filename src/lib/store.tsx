@@ -214,7 +214,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }, [accessToken])
 
   const addEvent = (event: CalendarEvent) => {
-    setEvents(prev => [...prev, event])
+    setEvents(prev => prev.some(e => e.id === event.id) ? prev : [...prev, event])
     toast("ACTION CONFIRMED", { description: `Added event: ${event.title}` })
   }
 
@@ -239,12 +239,12 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }
 
   const addTask = (task: Task) => {
-    setTasks(prev => [...prev, task])
+    setTasks(prev => prev.some(t => t.id === task.id) ? prev : [...prev, task])
     toast("ACTION CONFIRMED", { description: `Added task: ${task.title}` })
   }
 
   const addGrocery = (item: GroceryItem) => {
-    setGroceries(prev => [...prev, item])
+    setGroceries(prev => prev.some(g => g.id === item.id) ? prev : [...prev, item])
     toast("ACTION CONFIRMED", { description: `Added to provisions: ${item.name}` })
   }
 
