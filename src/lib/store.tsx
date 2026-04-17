@@ -53,6 +53,8 @@ export type EmailAction = {
 
 export type Email = {
   id: string
+  accountId?: string
+  accountEmail?: string
   subject: string
   sender: string
   snippet: string

@@ -35,6 +35,11 @@ export default function InboxPage() {
                     className={`w-full text-left p-6 border-b border-border/50 transition-all
                       ${isSelected ? 'bg-foreground text-background' : 'hover:bg-muted bg-white text-foreground'}`}
                   >
+                    {email.accountEmail && (
+                      <span className="text-[9px] text-foreground/30 font-mono block mb-1">
+                        via {email.accountEmail}
+                      </span>
+                    )}
                     <div className="flex justify-between items-center mb-2 gap-4">
                        <span className={`text-[10px] font-bold uppercase tracking-widest truncate ${isSelected ? 'text-background/60' : 'text-foreground/40'}`}>{email.sender}</span>
                        {email.attachments?.length > 0 && <Paperclip className={`w-3 h-3 shrink-0 ${isSelected ? 'text-background/60' : 'text-foreground/40'}`} />}

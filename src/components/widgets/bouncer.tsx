@@ -24,6 +24,11 @@ export function Bouncer({ className }: { className?: string }) {
              <AccordionItem key={email.id} value={email.id} className="border border-border px-6 bg-card data-[state=open]:border-foreground transition-colors mb-4 group">
                <AccordionTrigger className="hover:no-underline py-6">
                   <div className="flex flex-col gap-2 text-left w-full">
+                    {email.accountEmail && (
+                      <span className="text-[9px] text-foreground/30 font-mono block mb-1">
+                        via {email.accountEmail}
+                      </span>
+                    )}
                     <div className="flex items-center justify-between w-full">
                       <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground group-data-[state=open]:text-foreground">From: {email.sender}</span>
                       <span className="text-foreground/40 text-xs font-normal">Unread</span>
