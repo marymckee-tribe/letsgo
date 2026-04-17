@@ -22,27 +22,23 @@ if (!isMock) {
   db = getFirestore(app);
 
   googleProvider = new GoogleAuthProvider();
-  googleProvider.addScope('https://www.googleapis.com/auth/calendar.events');
-  googleProvider.addScope('https://www.googleapis.com/auth/tasks');
-  googleProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
-  googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+  // Scopes moved to server-side OAuth (see /api/auth/google/start).
+  // Firebase Auth is now used for user identity only.
 } else {
   db = {};
 }
 
 export const signInWithGoogle = async () => {
   if (isMock) {
-    return { user: { uid: 'dev-bypass-id', displayName: 'Executive User' }, token: 'mock-token' };
+    return { user: { uid: 'dev-bypass-id', displayName: 'Executive User' } };
   }
   const result = await signInWithPopup(auth, googleProvider);
-  const credential = GoogleAuthProvider.credentialFromResult(result);
-  return { user: result.user, token: credential?.accessToken };
+  return { user: result.user };
 };
 
 export const subscribeToAuth = (callback: (user: any) => void) => {
   if (isMock) {
-    const hasToken = typeof window !== "undefined" ? localStorage.getItem("google_access_token") : null;
-    callback(hasToken === "mock-token" ? { uid: 'dev-bypass-id', displayName: 'Executive User' } : null);
+    callback({ uid: 'dev-bypass-id', displayName: 'Executive User' });
     return () => {};
   }
   return onAuthStateChanged(auth, callback);
