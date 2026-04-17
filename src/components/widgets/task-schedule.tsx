@@ -133,7 +133,7 @@ export function TaskSchedule({ className }: { className?: string }) {
 
       {/* Provisions */}
       {groceries.length > 0 && (
-        <div className="shrink-0 pt-5 border-t border-border pt-5 mt-5">
+        <div className="shrink-0 pt-5 border-t border-border mt-5">
           <p className="text-[10px] uppercase tracking-[0.25em] text-foreground/25 font-bold mb-3">Provisions</p>
           <div className="space-y-1">
             {groceries.slice(0, 6).map(item => (
