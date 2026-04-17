@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Shield, BrainCircuit, Sliders, ToggleLeft, ToggleRight, Database } from "lucide-react"
+import { AccountsSection } from "@/components/settings/accounts-section"
 
 export default function SettingsPage() {
   const [toggles, setToggles] = useState({
@@ -40,6 +41,8 @@ export default function SettingsPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto pr-8 max-w-3xl">
+
+            <AccountsSection />
 
             <h2 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-8 pb-2 border-b border-border">Active Inference Models</h2>
 
