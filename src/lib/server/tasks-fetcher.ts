@@ -1,5 +1,9 @@
 // src/lib/server/tasks-fetcher.ts
-export async function fetchTasks(accessToken: string): Promise<any[]> {
+
+interface TaskList { id: string }
+interface Task { id: string; title?: string; due?: string; status?: string }
+
+export async function fetchTasks(accessToken: string): Promise<Record<string, unknown>[]> {
   const listsRes = await fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -7,12 +11,12 @@ export async function fetchTasks(accessToken: string): Promise<any[]> {
   if (listsData.error) throw new Error(listsData.error.message || 'Tasks lists failed')
   if (!listsData.items?.length) return []
 
-  const allTasks = await Promise.all(listsData.items.map(async (l: any) => {
+  const allTasks = await Promise.all(listsData.items.map(async (l: TaskList) => {
     const tr = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${l.id}/tasks`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
     const td = await tr.json()
-    return (td.items || []).map((t: any) => ({
+    return (td.items || []).map((t: Task) => ({
       id: t.id,
       title: t.title,
       due: t.due,

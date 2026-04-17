@@ -14,7 +14,8 @@ export async function getUidFromRequest(req: Request): Promise<string> {
   try {
     const decoded = await getAdminAuth().verifyIdToken(token)
     return decoded.uid
-  } catch (e: any) {
-    throw new HttpError(401, `Invalid token: ${e.message}`)
+  } catch (e: unknown) {
+    const err = e as { message?: string }
+    throw new HttpError(401, `Invalid token: ${err.message ?? 'unknown'}`)
   }
 }

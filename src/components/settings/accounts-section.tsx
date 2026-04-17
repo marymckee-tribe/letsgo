@@ -27,7 +27,21 @@ export function AccountsSection() {
     setLoading(false)
   }
 
-  useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      const token = await getIdToken()
+      if (cancelled) return
+      if (!token) { setAccounts([]); setLoading(false); return }
+      const res = await fetch('/api/accounts', { headers: { Authorization: `Bearer ${token}` } })
+      const data = await res.json()
+      if (cancelled) return
+      setAccounts(data.accounts || [])
+      setLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [getIdToken])
 
   const addAccount = async () => {
     const token = await getIdToken()

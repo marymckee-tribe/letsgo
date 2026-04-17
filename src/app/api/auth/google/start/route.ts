@@ -7,8 +7,9 @@ export async function GET(req: Request) {
     const uid = await getUidFromRequest(req)
     const url = buildAuthUrl(uid)
     return NextResponse.json({ url })
-  } catch (e: any) {
-    const status = e instanceof HttpError ? e.status : (e.status ?? 500)
-    return NextResponse.json({ error: e.message }, { status })
+  } catch (e: unknown) {
+    const err = e as { status?: number; message?: string }
+    const status = e instanceof HttpError ? e.status : (err.status ?? 500)
+    return NextResponse.json({ error: err.message ?? 'Unknown error' }, { status })
   }
 }

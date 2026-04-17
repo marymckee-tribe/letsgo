@@ -1,4 +1,4 @@
-import { buildAuthUrl, SCOPES, exchangeCode, refreshAccessToken } from '@/lib/server/google-oauth'
+import { buildAuthUrl, SCOPES } from '@/lib/server/google-oauth'
 
 describe('google-oauth', () => {
   beforeAll(() => {

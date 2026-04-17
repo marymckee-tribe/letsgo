@@ -36,7 +36,7 @@ describe('POST /api/gmail/list', () => {
 
     expect(fetchUnreadPrimary).toHaveBeenCalledTimes(2)
     expect(body.emails).toHaveLength(2)
-    const ids = body.emails.map((e: any) => e.accountId).sort()
+    const ids = body.emails.map((e: { accountId: string }) => e.accountId).sort()
     expect(ids).toEqual(['a1', 'a2'])
   })
 

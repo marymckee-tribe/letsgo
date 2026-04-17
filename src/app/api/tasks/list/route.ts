@@ -16,15 +16,17 @@ export async function POST(req: Request) {
         const { accessToken } = await refreshAccessToken(rt)
         const tasks = await fetchTasks(accessToken)
         return tasks.map(t => ({ ...t, accountId: acc.id }))
-      } catch (err: any) {
-        return { _error: { accountId: acc.id, message: err.message } }
+      } catch (err: unknown) {
+        const e = err as { message?: string }
+        return { _error: { accountId: acc.id, message: e.message ?? 'Unknown error' } }
       }
     }))
     const tasks = results.flatMap(r => (Array.isArray(r) ? r : []))
     const errors = results.flatMap(r => (!Array.isArray(r) && '_error' in r ? [r._error] : []))
     return NextResponse.json({ tasks, errors })
-  } catch (e: any) {
-    const status = e instanceof HttpError ? e.status : (e.status ?? 500)
-    return NextResponse.json({ error: e.message }, { status })
+  } catch (e: unknown) {
+    const err = e as { status?: number; message?: string }
+    const status = e instanceof HttpError ? e.status : (err.status ?? 500)
+    return NextResponse.json({ error: err.message ?? 'Unknown error' }, { status })
   }
 }

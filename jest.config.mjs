@@ -1,6 +1,6 @@
 // jest.config.mjs
 /** @type {import('jest').Config} */
-export default {
+const config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   moduleNameMapper: {
@@ -12,3 +12,4 @@ export default {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: { jsx: 'react-jsx', esModuleInterop: true } }],
   },
 }
+export default config

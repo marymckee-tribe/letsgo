@@ -1,4 +1,4 @@
-import { createAccount, listAccounts, getAccount, deleteAccount, type Account } from '@/lib/server/accounts'
+import { createAccount, listAccounts, deleteAccount, type Account } from '@/lib/server/accounts'
 import { getAdminDb } from '@/lib/server/firebase-admin'
 
 jest.mock('@/lib/server/firebase-admin')

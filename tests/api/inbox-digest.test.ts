@@ -4,6 +4,7 @@ import { getUidFromRequest } from '@/lib/server/session'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
+import * as aiModule from 'ai'
 
 jest.mock('@/lib/server/session')
 jest.mock('@/lib/server/accounts')
@@ -31,8 +32,7 @@ describe('POST /api/inbox/digest', () => {
       { id: 'm1', subject: 'Zoo', sender: 'School', fullBody: 'Zoo trip Thursday', date: 1 },
     ])
     // Re-apply generateObject default since clearAllMocks wiped it
-    const ai = require('ai')
-    ai.generateObject.mockResolvedValue({
+    ;(aiModule.generateObject as jest.Mock).mockResolvedValue({
       object: {
         emails: [
           { id: 'm1', subject: 'Zoo', sender: 'School', snippet: 'Zoo trip Thursday', suggestedActions: [] },

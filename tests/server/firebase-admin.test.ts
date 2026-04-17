@@ -45,12 +45,13 @@ describe('firebase-admin', () => {
     expect(db1).toBe(db2)
   })
 
-  it('throws when FIREBASE_ADMIN_SA_JSON is missing', () => {
+  it('throws when FIREBASE_ADMIN_SA_JSON is missing', async () => {
     const saved = process.env.FIREBASE_ADMIN_SA_JSON
     delete process.env.FIREBASE_ADMIN_SA_JSON
     // Force re-init by clearing module cache
     jest.resetModules()
-    expect(() => require('@/lib/server/firebase-admin').getAdminAuth()).toThrow(/FIREBASE_ADMIN_SA_JSON/)
+    const fresh = await import('@/lib/server/firebase-admin')
+    expect(() => fresh.getAdminAuth()).toThrow(/FIREBASE_ADMIN_SA_JSON/)
     process.env.FIREBASE_ADMIN_SA_JSON = saved
   })
 })

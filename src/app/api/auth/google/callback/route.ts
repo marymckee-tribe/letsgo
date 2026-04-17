@@ -20,8 +20,9 @@ export async function GET(req: Request) {
     })
     const origin = url.origin
     return NextResponse.redirect(`${origin}/settings#accounts`, 307)
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const err = e as { message?: string }
     const origin = url.origin
-    return NextResponse.redirect(`${origin}/settings?error=${encodeURIComponent(e.message)}`, 307)
+    return NextResponse.redirect(`${origin}/settings?error=${encodeURIComponent(err.message ?? 'Unknown error')}`, 307)
   }
 }

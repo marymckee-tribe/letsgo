@@ -1,5 +1,21 @@
 // src/lib/server/gmail-fetcher.ts
-export async function fetchUnreadPrimary(accessToken: string): Promise<any[]> {
+
+interface GmailPayload {
+  mimeType?: string
+  body?: { data?: string }
+  parts?: GmailPayload[]
+}
+
+export interface GmailEmail {
+  id: string
+  subject: string
+  sender: string
+  snippet: string
+  fullBody: string
+  date: number
+}
+
+export async function fetchUnreadPrimary(accessToken: string): Promise<GmailEmail[]> {
   const query = encodeURIComponent('in:inbox category:primary is:unread newer_than:7d')
   const listRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=10`,
@@ -16,8 +32,8 @@ export async function fetchUnreadPrimary(accessToken: string): Promise<any[]> {
     )
     const msgData = await msgRes.json()
     const getHeader = (name: string) =>
-      msgData.payload?.headers?.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || ''
-    const extractBody = (payload: any): string => {
+      msgData.payload?.headers?.find((h: { name: string; value?: string }) => h.name.toLowerCase() === name.toLowerCase())?.value || ''
+    const extractBody = (payload: GmailPayload): string => {
       if (!payload) return ''
       if (payload.mimeType === 'text/plain' && payload.body?.data) {
         return Buffer.from(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
