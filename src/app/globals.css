@@ -2,43 +2,46 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
-
 @theme inline {
+  /* Surface */
   --color-background: #ffffff;
-  --color-foreground: #000000;
-  --font-sans: var(--font-dm-sans);
-  --font-heading: var(--font-jost);
-  --color-border: color-mix(in srgb, black 10%, transparent);
-  --color-input: color-mix(in srgb, black 10%, transparent);
-  --color-ring: #000000;
-  --color-primary: #000000;
-  --color-primary-foreground: #ffffff;
+  --color-foreground: #1a1a1a;
   --color-card: #ffffff;
-  --color-card-foreground: #000000;
+  --color-card-foreground: #1a1a1a;
   --color-popover: #ffffff;
-  --color-popover-foreground: #000000;
+  --color-popover-foreground: #1a1a1a;
+  --color-primary: #1a1a1a;
+  --color-primary-foreground: #ffffff;
   --color-muted: color-mix(in srgb, black 5%, transparent);
   --color-muted-foreground: color-mix(in srgb, black 60%, transparent);
-  --color-destructive: #cc0000;
+  --color-border: color-mix(in srgb, black 8%, transparent);
+  --color-input: color-mix(in srgb, black 8%, transparent);
+  --color-ring: #1a1a1a;
+  --color-destructive: #b45309;
   --color-destructive-foreground: #ffffff;
+
+  /* Blush chrome */
+  --color-nav: #fff9f9;
+
+  /* Accents + signals */
+  --color-accent: #d65a6b;
+  --color-accent-foreground: #ffffff;
+  --color-signal-ai: #d65a6b;
+  --color-signal-ai-foreground: #ffffff;
+  --color-signal-today: #ffe566;
+  --color-signal-today-foreground: #1a1a1a;
+  --color-signal-warn: #b45309;
+  --color-signal-warn-foreground: #ffffff;
+
+  /* Type + radius */
+  --font-sans: var(--font-dm-sans);
+  --font-heading: var(--font-jost);
+  --font-serif: "Cormorant Garamond", Georgia, serif;
   --radius-sm: 0px;
   --radius-md: 0px;
   --radius-lg: 0px;
   --radius-xl: 0px;
   --radius: 0px;
-}
-
-:root {
-  --background: #ffffff;
-  --foreground: #000000;
-  --border: color-mix(in srgb, black 10%, transparent);
-}
-
-.dark {
-  --background: #000022;
-  --foreground: #ffffff;
-  --border: rgba(255, 255, 255, 0.1);
 }
 
 @layer base {
