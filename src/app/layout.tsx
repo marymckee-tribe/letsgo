@@ -29,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className={`${jost.variable} ${dmSans.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-white text-black font-sans">
+      <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
@@ -40,7 +40,7 @@ export default function RootLayout({
             <HubProvider>
               <MainNav />
               {children}
-              <Toaster position="bottom-right" toastOptions={{ className: "border-0 shadow-none rounded-none bg-black text-white px-6 py-4 font-mono uppercase tracking-widest text-xs" }} />
+              <Toaster position="bottom-right" toastOptions={{ className: "border-0 shadow-none rounded-none bg-foreground text-background px-6 py-4 font-mono uppercase tracking-widest text-xs" }} />
             </HubProvider>
           </AuthProvider>
         </ThemeProvider>
