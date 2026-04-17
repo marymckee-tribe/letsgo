@@ -11,8 +11,8 @@ describe('accounts CRUD', () => {
   const mockSet = jest.fn()
   const mockGet = jest.fn()
   const mockDelete = jest.fn()
-  const mockDoc = jest.fn(() => ({ set: mockSet, get: mockGet, delete: mockDelete, collection: mockCollection }))
-  const mockCollection = jest.fn(() => ({ doc: mockDoc, get: mockGet }))
+  const mockDoc: jest.Mock = jest.fn(() => ({ set: mockSet, get: mockGet, delete: mockDelete, collection: mockCollection }))
+  const mockCollection: jest.Mock = jest.fn(() => ({ doc: mockDoc, get: mockGet }))
 
   beforeEach(() => {
     jest.clearAllMocks()
