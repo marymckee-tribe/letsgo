@@ -43,7 +43,7 @@ export function TaskSchedule({ className }: { className?: string }) {
       {/* Tasks */}
       <div className="flex-1 flex flex-col min-h-0">
         <h2
-          className="text-4xl font-light tracking-tight text-black mb-8 shrink-0"
+          className="text-4xl font-light tracking-tight text-foreground mb-8 shrink-0"
           style={{ fontFamily: "var(--font-jost, sans-serif)" }}
         >
           Tasks
@@ -51,10 +51,10 @@ export function TaskSchedule({ className }: { className?: string }) {
 
         {allDone ? (
           <div className="flex-1 flex flex-col">
-            <p className="text-2xl font-serif italic text-black/20 leading-relaxed">All clear.</p>
+            <p className="text-2xl font-serif italic text-foreground/20 leading-relaxed">All clear.</p>
             <button
               onClick={() => setShowCompleted(s => !s)}
-              className="text-[10px] uppercase tracking-[0.2em] text-black/20 font-bold mt-4 hover:text-black/40 transition-colors text-left"
+              className="text-[10px] uppercase tracking-[0.2em] text-foreground/20 font-bold mt-4 hover:text-foreground/40 transition-colors text-left"
             >
               {showCompleted ? "Hide" : "Show"} completed ({doneTasks.length})
             </button>
@@ -62,12 +62,12 @@ export function TaskSchedule({ className }: { className?: string }) {
               <div className="mt-4 space-y-1 opacity-25 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
                 {doneTasks.map(task => (
                   <div key={task.id} className="flex items-start gap-3 py-2">
-                    <div className="shrink-0 mt-0.5 w-4 h-4 bg-black flex items-center justify-center">
+                    <div className="shrink-0 mt-0.5 w-4 h-4 bg-foreground flex items-center justify-center">
                       <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
-                        <path d="M1 3L3 5L7 1" stroke="white" strokeWidth="1.5" strokeLinecap="square" />
+                        <path d="M1 3L3 5L7 1" stroke="currentColor" className="text-background" strokeWidth="1.5" strokeLinecap="square" />
                       </svg>
                     </div>
-                    <p className="text-sm text-black line-through leading-snug">{task.title}</p>
+                    <p className="text-sm text-foreground line-through leading-snug">{task.title}</p>
                   </div>
                 ))}
               </div>
@@ -85,31 +85,28 @@ export function TaskSchedule({ className }: { className?: string }) {
                 >
                   <button
                     onClick={() => !isAnimating && completeTask(task.id, task.title)}
-                    className="shrink-0 mt-0.5 w-4 h-4 border flex items-center justify-center transition-all"
-                    style={{
-                      backgroundColor: isAnimating ? "black" : "white",
-                      borderColor: isAnimating ? "black" : "rgba(0,0,0,0.2)",
-                    }}
+                    className={`shrink-0 mt-0.5 w-4 h-4 border flex items-center justify-center transition-all ${
+                      isAnimating
+                        ? "bg-foreground border-foreground"
+                        : "bg-background border-border"
+                    }`}
                   >
                     {isAnimating && (
                       <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
-                        <path d="M1 3L3 5L7 1" stroke="white" strokeWidth="1.5" strokeLinecap="square" />
+                        <path d="M1 3L3 5L7 1" stroke="currentColor" className="text-background" strokeWidth="1.5" strokeLinecap="square" />
                       </svg>
                     )}
                   </button>
                   <div className="flex-1 min-w-0">
                     <p
-                      className="text-sm leading-snug"
-                      style={{
-                        textDecoration: isAnimating ? "line-through" : "none",
-                        color: isAnimating ? "rgba(0,0,0,0.3)" : "black",
-                        transition: "color 0.2s",
-                      }}
+                      className={`text-sm leading-snug transition-colors ${
+                        isAnimating ? "line-through text-foreground/30" : "text-foreground"
+                      }`}
                     >
                       {task.title}
                     </p>
                     {task.who && (
-                      <p className="text-[10px] text-[#4285f4] font-bold uppercase tracking-[0.15em] mt-0.5">{task.who}</p>
+                      <p className="text-[10px] text-signal-ai font-bold uppercase tracking-[0.15em] mt-0.5">{task.who}</p>
                     )}
                   </div>
                 </div>
@@ -117,15 +114,15 @@ export function TaskSchedule({ className }: { className?: string }) {
             })}
 
             {doneTasks.length > 0 && (
-              <div className="pt-4 mt-2 border-t border-black/6 space-y-1">
+              <div className="pt-4 mt-2 border-t border-border/60 space-y-1">
                 {doneTasks.map(task => (
                   <div key={task.id} className="flex items-start gap-3 py-2 opacity-25">
-                    <div className="shrink-0 mt-0.5 w-4 h-4 bg-black flex items-center justify-center">
+                    <div className="shrink-0 mt-0.5 w-4 h-4 bg-foreground flex items-center justify-center">
                       <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
-                        <path d="M1 3L3 5L7 1" stroke="white" strokeWidth="1.5" strokeLinecap="square" />
+                        <path d="M1 3L3 5L7 1" stroke="currentColor" className="text-background" strokeWidth="1.5" strokeLinecap="square" />
                       </svg>
                     </div>
-                    <p className="text-sm text-black line-through leading-snug">{task.title}</p>
+                    <p className="text-sm text-foreground line-through leading-snug">{task.title}</p>
                   </div>
                 ))}
               </div>
@@ -136,8 +133,8 @@ export function TaskSchedule({ className }: { className?: string }) {
 
       {/* Provisions */}
       {groceries.length > 0 && (
-        <div className="shrink-0 pt-5 border-t border-black/8 mt-5">
-          <p className="text-[10px] uppercase tracking-[0.25em] text-black/25 font-bold mb-3">Provisions</p>
+        <div className="shrink-0 pt-5 border-t border-border pt-5 mt-5">
+          <p className="text-[10px] uppercase tracking-[0.25em] text-foreground/25 font-bold mb-3">Provisions</p>
           <div className="space-y-1">
             {groceries.slice(0, 6).map(item => (
               <div
@@ -146,51 +143,51 @@ export function TaskSchedule({ className }: { className?: string }) {
                 onClick={() => toggleGrocery(item.id)}
               >
                 <div
-                  className="shrink-0 w-3.5 h-3.5 border flex items-center justify-center transition-all"
-                  style={{
-                    backgroundColor: item.checked ? "black" : "white",
-                    borderColor: item.checked ? "black" : "rgba(0,0,0,0.2)",
-                  }}
+                  className={`shrink-0 w-3.5 h-3.5 border flex items-center justify-center transition-all ${
+                    item.checked
+                      ? "bg-foreground border-foreground"
+                      : "bg-background border-border"
+                  }`}
                 >
                   {item.checked && (
                     <svg width="7" height="5" viewBox="0 0 7 5" fill="none">
-                      <path d="M1 2.5L2.5 4L6 1" stroke="white" strokeWidth="1.5" strokeLinecap="square" />
+                      <path d="M1 2.5L2.5 4L6 1" stroke="currentColor" className="text-background" strokeWidth="1.5" strokeLinecap="square" />
                     </svg>
                   )}
                 </div>
                 <span
-                  className="text-xs"
-                  style={{
-                    color: item.checked ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.6)",
-                    textDecoration: item.checked ? "line-through" : "none",
-                  }}
+                  className={`text-xs ${
+                    item.checked
+                      ? "line-through text-foreground/25"
+                      : "text-muted-foreground"
+                  }`}
                 >
                   {item.name}
                 </span>
               </div>
             ))}
             {groceries.length > 6 && (
-              <p className="text-[10px] text-black/25 pl-6">+{groceries.length - 6} more</p>
+              <p className="text-[10px] text-foreground/25 pl-6">+{groceries.length - 6} more</p>
             )}
           </div>
         </div>
       )}
 
       {/* Schedule strip */}
-      <div className="shrink-0 pt-6 border-t border-black/8 mt-6">
-        <p className="text-[10px] uppercase tracking-[0.25em] text-black/25 font-bold mb-4">Schedule</p>
+      <div className="shrink-0 pt-6 border-t border-border mt-6">
+        <p className="text-[10px] uppercase tracking-[0.25em] text-foreground/25 font-bold mb-4">Schedule</p>
         <div className="space-y-0">
           {scheduleItems.slice(0, 6).map((item, i) => (
             <div
               key={i}
-              className={`flex items-baseline gap-3 py-2 border-b border-black/5 last:border-0 ${item.isPast ? "opacity-20" : ""}`}
+              className={`flex items-baseline gap-3 py-2 border-b border-border/50 last:border-0 ${item.isPast ? "opacity-20" : ""}`}
             >
-              <span className="text-[10px] font-mono text-black/35 w-10 shrink-0">{item.time}</span>
-              <span className={`text-xs flex-1 truncate ${item.isNow ? "font-semibold text-black" : "text-black/60"}`}>
+              <span className="text-[10px] font-mono text-foreground/35 w-10 shrink-0">{item.time}</span>
+              <span className={`text-xs flex-1 truncate ${item.isNow ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
                 {item.title}
               </span>
               {item.isNow && (
-                <span className="text-[8px] uppercase font-bold tracking-widest text-[#4285f4] shrink-0">now</span>
+                <span className="text-[8px] uppercase font-bold tracking-widest text-signal-today-foreground bg-signal-today px-1.5 py-0.5 shrink-0">now</span>
               )}
             </div>
           ))}

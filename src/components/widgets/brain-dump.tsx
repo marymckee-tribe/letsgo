@@ -84,30 +84,31 @@ export function BrainDump({ className }: { className?: string }) {
   }
 
   return (
-    <div className={`flex flex-col gap-4 relative bg-white px-8 py-6 -mx-8 sm:mx-0 sm:px-0 sm:py-0 transition-all ${className}`}>
+    <div className={`flex flex-col gap-4 relative bg-background px-8 py-6 -mx-8 sm:mx-0 sm:px-0 sm:py-0 transition-all ${className}`}>
       <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
-        <h2 className="font-heading text-lg font-light tracking-tight text-black flex items-center gap-4">
+        <h2 className="font-heading text-lg font-light tracking-tight text-foreground flex items-center gap-4">
+          <span className="text-accent">◇</span>
           Terminal
           {messages.length > 0 && !isExpanded && (
-             <span className="text-black/40 text-[10px] uppercase font-mono tracking-widest leading-none mt-1 line-clamp-1">
+             <span className="text-foreground/40 text-[10px] uppercase font-mono tracking-widest leading-none mt-1 line-clamp-1">
                {messages[messages.length - 1].role === 'assistant' ? messages[messages.length - 1].content : "Processing..."}
              </span>
           )}
         </h2>
-        <button className="text-black/20 hover:text-black transition-colors shrink-0">
+        <button className="text-foreground/20 hover:text-foreground transition-colors shrink-0">
           {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
         </button>
       </div>
 
       {isExpanded && messages.length > 0 && (
-        <div ref={scrollRef} className="flex flex-col gap-6 max-h-[50vh] overflow-y-auto py-8 border-b border-black/5 mb-2 pr-4 scroll-smooth">
+        <div ref={scrollRef} className="flex flex-col gap-6 max-h-[50vh] overflow-y-auto py-8 border-b border-border/50 mb-2 pr-4 scroll-smooth">
           {messages.map((m, i) => {
             const displayStr = m.content.replace(/```json\n\[[\s\S]*?\]\n```/g, '').trim();
             if (!displayStr) return null;
 
             return (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] sm:max-w-[70%] p-5 text-sm leading-relaxed ${m.role === 'user' ? 'bg-black/5 text-black' : 'bg-transparent border-l-2 border-black pl-6 text-black/80 font-serif'}`}>
+                <div className={`max-w-[85%] sm:max-w-[70%] p-5 text-sm leading-relaxed ${m.role === 'user' ? 'bg-muted text-foreground' : 'bg-transparent border-l-2 border-accent pl-6 text-foreground/80 font-serif'}`}>
                   {displayStr}
                 </div>
               </div>
@@ -117,13 +118,13 @@ export function BrainDump({ className }: { className?: string }) {
       )}
 
       <form className="flex gap-4 items-center" onSubmit={onSubmit}>
-        <Input 
+        <Input
           value={localInput}
           onChange={(e) => setLocalInput(e.target.value)}
-          placeholder={isExpanded ? "Message Chief of Staff..." : "Awaiting directive..."} 
-          className="flex-1 border-0 border-b border-black/20 rounded-none px-0 text-lg bg-transparent focus-visible:ring-0 focus-visible:border-black transition-colors shadow-none" 
+          placeholder={isExpanded ? "Message Chief of Staff..." : "Awaiting directive..."}
+          className="flex-1 border-0 border-b border-border rounded-none px-0 text-lg bg-transparent focus-visible:ring-0 focus-visible:border-foreground transition-colors shadow-none"
         />
-        <Button type="submit" size="icon" className="rounded-none bg-black text-white hover:bg-black/80 w-12 h-12 shadow-none border-0 shrink-0">
+        <Button type="submit" size="icon" className="rounded-none bg-foreground text-background hover:bg-foreground/80 w-12 h-12 shadow-none border-0 shrink-0">
           <Send className="w-5 h-5" />
         </Button>
       </form>
