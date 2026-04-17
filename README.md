@@ -29,6 +29,21 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Linking Gmail accounts
+
+The Hub supports linking multiple Gmail accounts so inbox, calendar, and tasks data merges across them.
+
+1. Sign in with any Google account (Firebase sign-in establishes your user identity).
+2. Go to `/settings` → **Linked Google Accounts**.
+3. Click **Add another Gmail account**, grant the requested scopes in the Google consent screen.
+4. On redirect, the account appears in the list with its linked date.
+5. Inbox, calendar, and tasks hydrate from every linked account; each email row shows a small `via <account>` marker.
+6. Remove an account from the same settings section; its data clears on next refresh.
+
+Refresh tokens are stored encrypted (AES-256-GCM) server-side and are exchanged for short-lived access tokens on every API call — so the old "hourly 401 re-login" problem is gone.
+
+See `.env.local.example` for the required env vars (Google OAuth client, Firebase Admin SA, token encryption key).
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
