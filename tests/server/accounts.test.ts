@@ -16,7 +16,7 @@ describe('accounts CRUD', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
-    ;(getAdminDb as jest.Mock).mockReturnValue({ collection: mockCollection })
+    ;(getAdminDb as jest.Mock).mockReturnValue({ collection: mockCollection, settings: jest.fn() })
   })
 
   it('creates an account with encrypted refresh token', async () => {

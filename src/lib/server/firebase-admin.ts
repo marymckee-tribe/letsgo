@@ -4,6 +4,7 @@ import { getAuth, type Auth } from 'firebase-admin/auth'
 import { getFirestore, type Firestore } from 'firebase-admin/firestore'
 
 let app: App | null = null
+let dbConfigured = false
 
 function initApp(): App {
   if (app) return app
@@ -24,5 +25,10 @@ export function getAdminAuth(): Auth {
 }
 
 export function getAdminDb(): Firestore {
-  return getFirestore(initApp())
+  const db = getFirestore(initApp())
+  if (!dbConfigured) {
+    db.settings({ ignoreUndefinedProperties: true })
+    dbConfigured = true
+  }
+  return db
 }

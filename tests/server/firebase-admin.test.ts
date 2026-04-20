@@ -18,7 +18,7 @@ jest.mock('firebase-admin/auth', () => {
 })
 
 jest.mock('firebase-admin/firestore', () => {
-  const fakeDb = { collection: jest.fn() }
+  const fakeDb = { collection: jest.fn(), settings: jest.fn() }
   return {
     getFirestore: jest.fn(() => fakeDb),
   }
