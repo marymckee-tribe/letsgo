@@ -128,14 +128,21 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         toast("SYNC ERROR", { description: "Calendar: " + data.error })
         return
       }
-      if (data.events) setEvents(data.events.map((e: any) => ({
-        id: e.id,
-        title: e.title,
-        time: e.start,
-        date: new Date(e.start).getDate(),
-        location: e.location,
-        fromEmail: false,
-      })))
+      if (data.events) setEvents(data.events.map((e: { id: string; title: string; start: string; location?: string }) => {
+        const isAllDay = !e.start.includes('T')
+        const startDate = new Date(e.start)
+        const time = isAllDay
+          ? 'All day'
+          : startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })
+        return {
+          id: e.id,
+          title: e.title,
+          time,
+          date: startDate.getDate(),
+          location: e.location,
+          fromEmail: false,
+        }
+      }))
     }
 
     const hydrateTasks = async () => {
