@@ -27,7 +27,11 @@ export function getAdminAuth(): Auth {
 export function getAdminDb(): Firestore {
   const db = getFirestore(initApp())
   if (!dbConfigured) {
-    db.settings({ ignoreUndefinedProperties: true })
+    try {
+      db.settings({ ignoreUndefinedProperties: true })
+    } catch {
+      // Firestore already initialized in this process (hot reload); settings already applied.
+    }
     dbConfigured = true
   }
   return db
