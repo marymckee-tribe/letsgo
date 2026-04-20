@@ -23,6 +23,7 @@ export async function POST(req: Request) {
     }))
     const events = results.flatMap(r => (Array.isArray(r) ? r : []))
     const errors = results.flatMap(r => (!Array.isArray(r) && '_error' in r ? [r._error] : []))
+    console.log(`[calendar/list] uid=${uid} accounts=${accounts.length} events=${events.length} errors=${errors.length}`, errors)
     return NextResponse.json({ events, errors })
   } catch (e: unknown) {
     const err = e as { status?: number; message?: string }
