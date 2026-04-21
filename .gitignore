@@ -45,3 +45,7 @@ next-env.d.ts
 
 # superpowers brainstorm sessions
 .superpowers/
+
+# editor / local tool caches
+.vscode/
+.playwright-mcp/
