@@ -29,7 +29,7 @@ export default function CalendarPage() {
     setEventTitle, setEventTime, setEventLocation, setEventNotes,
     profiles,
   } = useHub()
-  const { accessToken } = useAuth()
+  const { user, getIdToken } = useAuth()
   const todayIdx = getCurrentDayIndex()
   const weekDates = getWeekDates()
 
@@ -60,7 +60,7 @@ export default function CalendarPage() {
 
     if (!selectedEvent || selectedEvent.notes !== undefined) return
 
-    if (!accessToken || accessToken === "mock-token") {
+    if (!user) {
       setEventNotes(selectedEvent.id, "- Review any relevant materials beforehand\n- Allow buffer time for travel")
       return
     }
@@ -73,37 +73,46 @@ export default function CalendarPage() {
       .filter(e => e.id !== selectedEvent.id)
       .map(e => ({ title: e.title, date: e.date, time: e.time }))
 
-    setNotesLoading(true)
-    fetch("/api/calendar/event-notes", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        event: {
-          title: selectedEvent.title,
-          date: selectedEvent.date,
-          time: selectedEvent.time,
-          location: selectedEvent.location,
+    setNotesLoading(true);
+
+    (async () => {
+      const idToken = await getIdToken()
+      if (!idToken) {
+        setEventNotes(selectedEvent.id, "- Review any relevant materials beforehand\n- Allow buffer time for travel")
+        setNotesLoading(false)
+        return
+      }
+      fetch("/api/calendar/event-notes", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
         },
-        profiles,
-        nearbyEvents,
-      }),
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (controller.signal.aborted) return
-        setEventNotes(eventId, data.notes ?? "- No prep notes available")
+        body: JSON.stringify({
+          event: {
+            title: selectedEvent.title,
+            date: selectedEvent.date,
+            time: selectedEvent.time,
+            location: selectedEvent.location,
+          },
+          profiles,
+          nearbyEvents,
+        }),
       })
-      .catch(err => {
-        if (err.name === "AbortError") return
-        setEventNotes(eventId, "- Couldn't generate notes")
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setNotesLoading(false)
-      })
+        .then(r => r.json())
+        .then(data => {
+          if (controller.signal.aborted) return
+          setEventNotes(eventId, data.notes ?? "- No prep notes available")
+        })
+        .catch(err => {
+          if (err.name === "AbortError") return
+          setEventNotes(eventId, "- Couldn't generate notes")
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setNotesLoading(false)
+        })
+    })()
 
     return () => {
       controller.abort()

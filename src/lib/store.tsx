@@ -14,6 +14,7 @@ export type CalendarEvent = {
   fromEmail?: boolean
   aiTravelBuffer?: string | null
   aiPrepSuggestion?: string | null
+  profileId?: string | null
 }
 
 export type Task = {
@@ -53,6 +54,8 @@ export type EmailAction = {
 
 export type Email = {
   id: string
+  accountId?: string
+  accountEmail?: string
   subject: string
   sender: string
   snippet: string
@@ -83,26 +86,6 @@ interface HubState {
   toggleGrocery: (id: string) => void
 }
 
-const mockEvents: CalendarEvent[] = [
-  { id: "1", title: "Gymnastics", time: "16:00", date: 20 },
-  { id: "2", title: "Parent Teacher Conf.", time: "09:00", date: 24 }
-]
-const mockTasks: Task[] = [
-  { id: "1", title: "Review Board Deck", context: "WORK", completed: false },
-  { id: "2", title: "Approve Architecture Draft", context: "WORK", completed: false }
-]
-const mockGroceries: GroceryItem[] = [
-  { id: "1", name: "Almond Milk" },
-  { id: "2", name: "Coffee Beans" }
-]
-const mockEmails: Email[] = [
-  { 
-    id: "1", subject: "School Permission Slip", sender: "School Admin", snippet: "The school requires a signed waiver for the upcoming zoo field trip...", 
-    fullBody: "Hello parents, don't forget the waiver for the zoo outting next week.", attachments: [{ filename: "waiver.pdf", mimeType: "application/pdf" }],
-    suggestedActions: [{ id: "A1", type: "TODO_ITEM", title: "Sign Waiver", context: "FAMILY", status: "PENDING" }], date: Date.now() - 600000 
-  }
-]
-
 const HubContext = createContext<HubState | undefined>(undefined)
 
 const initialGroceries: GroceryItem[] = [
@@ -124,94 +107,75 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   const [groceries, setGroceries] = useState<GroceryItem[]>(initialGroceries)
   const [emails, setEmails] = useState<Email[]>([])
   const [profiles, setProfiles] = useState<EntityProfile[]>(initialProfiles)
-  const { accessToken } = useAuth()
+  const { user, getIdToken } = useAuth()
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!user) return
 
-    if (accessToken === "mock-token") {
-      setEvents(mockEvents)
-      setTasks(mockTasks)
-      setGroceries(mockGroceries)
-      setEmails(mockEmails)
-      return
+    const hydrate = async (path: string) => {
+      const token = await getIdToken()
+      if (!token) return null
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      return res.json()
     }
 
-    // Fetch live Calendar Events securely via AI Digest (Start of Day logic handled in backend)
     const hydrateCalendar = async () => {
-      try {
-        const res = await fetch(`/api/calendar/digest`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profiles: initialProfiles }) // Pass static profiles for prompt injection
-        })
-        const data = await res.json()
-        if (data.error) {
-          console.error("Calendar Sync:", JSON.stringify(data.error))
-          toast("SYNC ERROR", { description: "Calendar API: " + (data.error.message || "Access denied") })
-        } else if (data.events) {
-          setEvents(data.events)
-          setScheduleInsights(data.insights || [])
-        }
-      } catch (err) {
-        toast("SYNC ERROR", { description: "Failed to pull live Calendar data." })
+      const data = await hydrate('/api/calendar/list')
+      if (!data) return
+      if (data.error) {
+        toast("SYNC ERROR", { description: "Calendar: " + data.error })
+        return
       }
+      if (data.events) setEvents(data.events.map((e: { id: string; title: string; start: string; location?: string; profileId?: string | null }) => {
+        const isAllDay = !e.start.includes('T')
+        const startDate = new Date(e.start)
+        const time = isAllDay
+          ? 'All day'
+          : startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })
+        return {
+          id: e.id,
+          title: e.title,
+          time,
+          date: startDate.getDate(),
+          location: e.location,
+          fromEmail: false,
+          profileId: e.profileId ?? null,
+        }
+      }))
     }
 
-    // Fetch live Tasks securely
     const hydrateTasks = async () => {
-      try {
-        const res = await fetch(`https://tasks.googleapis.com/tasks/v1/users/@me/lists`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        })
-        const data = await res.json()
-        if (data.error) {
-          console.error("Tasks Sync:", JSON.stringify(data.error))
-          toast("SYNC ERROR", { description: "Tasks API: " + (data.error.message || "Access denied") })
-        } else if (data.items && data.items.length > 0) {
-          const listId = data.items[0].id
-          const taskRes = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${listId}/tasks`, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-          })
-          const taskData = await taskRes.json()
-          if (taskData.items) {
-             const liveTasks = taskData.items.map((item: any) => ({
-               id: item.id,
-               title: item.title,
-               context: "PERSONAL",
-               completed: item.status === "completed"
-             }))
-             setTasks(liveTasks)
-          }
-        }
-      } catch (err) {
-        toast("SYNC ERROR", { description: "Failed to pull live Tasks data." })
+      const data = await hydrate('/api/tasks/list')
+      if (!data) return
+      if (data.error) {
+        toast("SYNC ERROR", { description: "Tasks: " + data.error })
+        return
       }
+      if (data.tasks) setTasks(data.tasks.map((t: any) => ({
+        id: t.id,
+        title: t.title,
+        context: 'PERSONAL',
+        completed: t.completed,
+      })))
     }
 
-    // Fetch live Gmail via AI Digest Route
     const hydrateEmails = async () => {
-      try {
-        const res = await fetch(`/api/inbox/digest`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${accessToken}` }
-        })
-        const data = await res.json()
-        if (data.error) {
-          console.error("Gmail Sync:", JSON.stringify(data.error))
-          toast("SYNC ERROR", { description: "Gmail API: " + (data.error.message || "Access denied") })
-        } else if (data.emails) {
-          setEmails(data.emails)
-        }
-      } catch (err) {
-        toast("SYNC ERROR", { description: "Failed to pull live Inbox data." })
+      const data = await hydrate('/api/inbox/digest')
+      if (!data) return
+      if (data.error) {
+        toast("SYNC ERROR", { description: "Gmail: " + data.error })
+        return
       }
+      if (data.emails) setEmails(data.emails)
     }
 
     hydrateCalendar()
     hydrateTasks()
     hydrateEmails()
-  }, [accessToken])
+  }, [user, getIdToken])
 
   const addEvent = (event: CalendarEvent) => {
     setEvents(prev => prev.some(e => e.id === event.id) ? prev : [...prev, event])

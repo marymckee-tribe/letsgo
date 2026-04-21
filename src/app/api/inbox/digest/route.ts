@@ -1,113 +1,74 @@
-import { openai } from '@ai-sdk/openai';
-import { generateObject } from 'ai';
-import { z } from 'zod';
-import { NextResponse } from 'next/server';
+// src/app/api/inbox/digest/route.ts
+import { NextResponse } from 'next/server'
+import { openai } from '@ai-sdk/openai'
+import { generateObject } from 'ai'
+import { z } from 'zod'
+import { getUidFromRequest, HttpError } from '@/lib/server/session'
+import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
+import { refreshAccessToken } from '@/lib/server/google-oauth'
+import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
 
-export const maxDuration = 60;
+export const maxDuration = 60
 
 const EmailSchema = z.object({
   emails: z.array(z.object({
     id: z.string(),
     subject: z.string(),
     sender: z.string(),
-    snippet: z.string().describe("A heavily cleaned, 1-sentence executive summary of the email."),
+    snippet: z.string(),
     suggestedActions: z.array(z.object({
-      id: z.string().describe("A unique random 6-character string"),
-      type: z.enum(["CALENDAR_INVITE", "TODO_ITEM"]),
-      title: z.string().describe("Cleaned task or event title (e.g. 'Gymnastics Class', 'Sign Form')"),
-      date: z.number().nullable().describe("Day of month (1-31) if type is CALENDAR_INVITE. Null if inapplicable."),
-      time: z.string().nullable().describe("HH:MM string if type is CALENDAR_INVITE. Null if inapplicable."),
-      context: z.enum(['WORK', 'PERSONAL', 'FAMILY', 'KID 1', 'KID 2']).nullable().describe("Null if inapplicable.")
-    })).describe("Explicit actions extracted from the email. Empty array if none.")
-  }))
+      id: z.string(),
+      type: z.enum(['CALENDAR_INVITE', 'TODO_ITEM']),
+      title: z.string(),
+      date: z.number().nullable(),
+      time: z.string().nullable(),
+      context: z.enum(['WORK', 'PERSONAL', 'FAMILY', 'KID 1', 'KID 2']).nullable(),
+    })),
+  })),
 })
 
 export async function POST(req: Request) {
   try {
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const uid = await getUidFromRequest(req)
+    const accounts = await listAccounts(uid)
 
-    const accessToken = authHeader.split(' ')[1];
+    const perAccount = await Promise.all(accounts.map(async (acc) => {
+      try {
+        const rt = await getDecryptedRefreshToken(uid, acc.id)
+        if (!rt) return []
+        const { accessToken } = await refreshAccessToken(rt)
+        const raw = await fetchUnreadPrimary(accessToken)
+        return raw.map(r => ({ ...r, accountId: acc.id, accountEmail: acc.email }))
+      } catch {
+        return []
+      }
+    }))
+    const rawEmails = perAccount.flat()
+    if (rawEmails.length === 0) return NextResponse.json({ emails: [] })
 
-    // 1. Fetch raw payload from Gmail
-    const query = encodeURIComponent("in:inbox category:primary is:unread newer_than:7d");
-    const listRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=10`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    
-    const listData = await listRes.json();
-    if (listData.error) return NextResponse.json({ error: listData.error }, { status: 403 });
-    if (!listData.messages || listData.messages.length === 0) return NextResponse.json({ emails: [] });
-
-    // 2. Fetch specific thread bodies
-    const rawEmails = await Promise.all(listData.messages.map(async (msg: any) => {
-        const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        const msgData = await msgRes.json();
-        const getHeader = (name: string) => msgData.payload?.headers?.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || "Unknown";
-        
-        const extractBody = (payload: any): string => {
-            if (!payload) return "";
-            let text = "";
-            if (payload.mimeType === "text/plain" && payload.body?.data) {
-                text = Buffer.from(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-            } else if (payload.parts) {
-                payload.parts.forEach((p: any) => { text += extractBody(p) });
-            }
-            return text;
-        }
-
-        const extractAttachments = (payload: any): any[] => {
-            if (!payload) return [];
-            let atts: any[] = [];
-            if (payload.filename && payload.filename.length > 0) {
-                atts.push({ filename: payload.filename, mimeType: payload.mimeType });
-            }
-            if (payload.parts) {
-                payload.parts.forEach((p: any) => { atts.push(...extractAttachments(p)) });
-            }
-            return atts;
-        }
-
-        const body = extractBody(msgData.payload) || msgData.snippet || "";
-        const attachments = extractAttachments(msgData.payload);
-
-        return {
-           id: msgData.id,
-           subject: getHeader("subject"),
-           sender: getHeader("from").split('<')[0].trim(),
-           content: body.substring(0, 4000),
-           attachments: attachments,
-           date: parseInt(msgData.internalDate || Date.now().toString(), 10)
-        }
-    }));
-
-    // 3. AI Interception Layer -> Digestion
-    const prompt = `You are a Chief of Staff AI. Extract and clean the following emails into high-signal summaries. Strip all noise. Identify embedded instructions requiring physical execution and structure them into the suggestedActions array.\n\nEmails:\n${JSON.stringify(rawEmails, null, 2)}`;
-
+    const prompt = `You are a Chief of Staff AI. Extract and clean the following emails into high-signal summaries. Strip all noise. Identify embedded instructions requiring physical execution and structure them into the suggestedActions array.\n\nEmails:\n${JSON.stringify(rawEmails, null, 2)}`
     const { object } = await generateObject({
       model: openai('gpt-4o-mini'),
       schema: EmailSchema,
-      prompt: prompt,
-    });
-
-    // Merge the AI analysis back with the core timestamps to ensure chronological integrity
-    const digestedEmails = object.emails.map(aiEmail => {
-       const raw = rawEmails.find(r => r.id === aiEmail.id) || rawEmails[0];
-       const actions = aiEmail.suggestedActions.map(a => ({ ...a, status: "PENDING" }));
-       return {
-         ...aiEmail,
-         suggestedActions: actions,
-         fullBody: raw.content,
-         attachments: raw.attachments,
-         date: raw.date
-       }
+      prompt,
     })
 
-    return NextResponse.json({ emails: digestedEmails });
-  } catch (error: any) {
-    console.error(error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const digested = object.emails.map(ai => {
+      const raw = rawEmails.find(r => r.id === ai.id) || rawEmails[0]
+      return {
+        ...ai,
+        suggestedActions: ai.suggestedActions.map(a => ({ ...a, status: 'PENDING' as const })),
+        fullBody: raw.fullBody,
+        date: raw.date,
+        accountId: raw.accountId,
+        accountEmail: raw.accountEmail,
+      }
+    })
+
+    return NextResponse.json({ emails: digested })
+  } catch (e: unknown) {
+    const err = e as { status?: number; message?: string }
+    const status = e instanceof HttpError ? e.status : (err.status ?? 500)
+    return NextResponse.json({ error: err.message ?? 'Unknown error' }, { status })
   }
 }
