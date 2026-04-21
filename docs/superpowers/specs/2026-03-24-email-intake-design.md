@@ -93,8 +93,8 @@ Replaces the accordion with a vertical card list. Shows all emails with `status 
 - Subject (truncated)
 - AI summary (one-line italic)
 - Pills (only shown when count > 0):
-  - `N Events` — black pill
-  - `N Directives` — black pill
+  - `N Events` — black pill, counts `CALENDAR_INVITE` actions
+  - `N Directives` — black pill, counts `TODO_ITEM` + `GROCERY_ITEM` actions combined
   - `📎 N` — light pill for attachments
   - `⚠ Duplicate Detected` — amber pill, shown when any extracted event title + date matches an existing calendar event
 - Actions: **Approve All** (primary, full-width) + **Dismiss** (secondary)
@@ -158,7 +158,7 @@ Opens from the right when a card is tapped. Uses the existing `Sheet` component 
 **Extracted Directives section** (omitted if no directives)
 - Section label: `EXTRACTED DIRECTIVES`
 - Each directive shown as a row:
-  - Type label (`EVENT` / `DIRECTIVE` / `PROVISION`)
+  - Type label: `CALENDAR_INVITE` → `EVENT`, `TODO_ITEM` → `DIRECTIVE`, `GROCERY_ITEM` → `PROVISION`
   - Title + date/time if applicable
   - **Approve** (black) + **Dismiss** (outlined) buttons when `status === "PENDING"`
   - `APPROVED` or `DISMISSED` status badge (muted) when already actioned, row dimmed
@@ -167,7 +167,7 @@ Opens from the right when a card is tapped. Uses the existing `Sheet` component 
 **Attachments section** (omitted if no attachments)
 - Section label: `ATTACHMENTS`
 - Each attachment row:
-  - Filename + MIME type + file size (if available from API; omitted if not)
+  - Filename + MIME type + file size (read from `payload.body.size` in the Gmail message payload; omitted if zero or unavailable)
   - Assignment buttons: `None` `Ellie` `Annie` `Both` — active state is black filled
   - Assignment saves immediately on tap via `setAttachmentAssignment`
   - Confirmation label `→ Ellie` (blue) appears next to assigned button
@@ -181,7 +181,7 @@ Opens from the right when a card is tapped. Uses the existing `Sheet` component 
 
 When the user taps **Send to Terminal →** on an info-only email card:
 
-1. A `TerminalContext` is added to the app (or a ref exposed via the existing `BrainDump` component) that exposes a `seedTerminal(content: string)` function
+1. A `TerminalContext` is added to the app (wrapping `BrainDump` and `Bouncer` at the layout level) that exposes a `seedTerminal(content: string)` function. A ref-based approach is not used — `BrainDump` and `Bouncer` are siblings, not parent/child, so context is the correct mechanism.
 2. The function scrolls to the Terminal section and focuses the input
 3. The input is pre-populated with:
    `Re: "[subject]" — [AI summary]. `
