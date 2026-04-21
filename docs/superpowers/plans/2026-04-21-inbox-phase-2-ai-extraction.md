@@ -4,27 +4,29 @@
 
 **Goal:** Replace the current 2-action classifier with a richer AI extraction pipeline that emits (a) one of six email-level classifications, (b) zero or more editable actions with `sourceQuote` + `confidence`, and (c) a `senderIdentity` linking the email to a Life Graph person/org. Persist profiles to Firestore and add a learning loop so unknown domains can be remembered after user confirmation.
 
-**Architecture:** Phase 2 is a data-layer + AI-pipeline refactor. The `/api/inbox/digest` route is rewritten to emit a richer `Email` record (`classification`, `senderIdentity`, `hubStatus`, `suggestedActions` with `sourceQuote` + `confidence`). `EntityProfile` gains `knownDomains` / `knownSenders`, and profiles move from a hardcoded list in `src/lib/store.tsx` into Firestore with a seed on first read. A two-step sender-identity resolver runs server-side — direct lookup first, then the LLM matches inferentially as part of the classification prompt. A small learning-loop banner in the existing `/inbox` UI lets the user confirm inferred domain matches, which writes back to Firestore. The existing `/inbox` page keeps rendering via a thin compatibility shim mapping the new action status enum to the old `PENDING` / `APPROVED` / `DISMISSED` names. Phase 3 replaces the UI and drops the shim.
+**Architecture:** Phase 2 is a data-layer + AI-pipeline refactor on top of the tRPC + TanStack Query baseline delivered by the architecture migration. The `inboxRouter.digest` procedure in `src/server/trpc/routers/inbox.ts` is rewritten end-to-end to emit a richer `Email` record (`classification`, `senderIdentity`, `hubStatus`, `suggestedActions` with `sourceQuote` + `confidence`). A new `profilesRouter` (`list`, `upsert`, `learnDomain`) replaces the legacy `/api/profiles` and `/api/profiles/learn-domain` Route Handlers. `EntityProfile` gains `knownDomains` / `knownSenders`, and profiles move from a hardcoded list in `src/lib/store.tsx` into Firestore with a seed on first read. A two-step sender-identity resolver runs server-side — direct lookup first (via `email-addresses` for parsing), then the LLM matches inferentially as part of the classification prompt. Dates flow into the prompt as ISO-local-time strings rendered with `date-fns-tz` — epoch milliseconds go in, human-readable ISO strings come out, DST is handled by the library. A small learning-loop banner in the existing `/inbox` UI lets the user confirm inferred domain matches, which invokes `trpc.profiles.learnDomain.useMutation()`. The client store consumes the new schema via the existing `trpc.inbox.digest.useQuery()` hook (set up in the architecture migration) plus new `trpc.profiles.*` hooks. The existing `/inbox` page keeps rendering via a thin compatibility shim (`src/lib/action-compat.ts`) mapping the new action status enum to the old `PENDING` / `APPROVED` / `DISMISSED` names. Phase 3 replaces the UI and drops the shim.
 
-**Tech Stack:** Next.js 16 (App Router, Route Handlers), Firebase Admin SDK (server), Firestore, `@ai-sdk/openai` + `ai` (`generateObject` with a Zod schema), `zod` 4, Jest + ts-jest.
+**Tech Stack:** Next.js 16 (App Router), tRPC v11, `@tanstack/react-query` v5, Firebase Admin SDK (server), Firestore, `@ai-sdk/openai` + `ai` (`generateObject` with a Zod schema), `zod` v4, `date-fns` + `date-fns-tz` (NEW — ISO-local time in prompts), `email-addresses` (NEW — RFC-5322 From-header parsing), Jest + ts-jest.
 
 **Spec reference:** `docs/superpowers/specs/2026-04-17-inbox-redesign-design.md` — specifically the "Data Model", "AI Extraction Pipeline", and "Sender identity matching" sections.
 
-**Base branch:** Branch off `feature/inbox-phase-1` once it merges to `main`, or — if working before Phase 1 merges — branch off `feature/inbox-phase-1` directly and rebase onto `main` after the merge. This plan assumes the Phase 1 server infrastructure (accounts, encrypted refresh tokens, `/api/inbox/digest` skeleton, `listAccounts`, `getDecryptedRefreshToken`, `refreshAccessToken`, `fetchUnreadPrimary`) is in place.
+**Base branch:** Branch `feature/inbox-phase-2` off `main` *after* the `architecture/trpc-migration` branch merges. This plan assumes: (a) Phase 1 multi-account server infra is in place (`src/lib/server/accounts.ts`, `google-oauth.ts`, `gmail-fetcher.ts`, `session.ts`, `firebase-admin.ts`), and (b) the architecture migration is merged — specifically `src/server/trpc/index.ts` (builder + `protectedProcedure`), `src/server/trpc/context.ts`, `src/server/trpc/root.ts`, `src/server/trpc/routers/inbox.ts` (Phase-1-parity digest procedure), `src/app/api/trpc/[trpc]/route.ts`, `src/lib/trpc/client.ts`, `src/lib/trpc/provider.tsx`, and a `store.tsx` that consumes `trpc.*.useQuery()` hooks rather than hand-rolled `fetch` calls. If either (a) or (b) is missing, stop and resolve first.
 
 ---
 
 ## Before You Start — Read These
 
-Next.js 16 has breaking changes. Read BEFORE writing code:
+Next.js 16 has breaking changes, and tRPC's App Router patterns differ from most blog posts. Read BEFORE writing code:
 
-- `node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md` — Route Handler conventions
+- `node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md` — Route Handler conventions (still relevant for the unchanged `/api/auth/google/callback` + `/api/trpc/[trpc]` catch-all)
 - `node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md` — breaking changes vs training data
-- Check `package.json` — `next` is pinned; confirm the docs you read match that version.
+- `docs/superpowers/plans/2026-04-21-architecture-trpc-react-query.md` — confirm the exact export surface of `router`, `protectedProcedure`, `createCaller`, and `trpc.useUtils()` before writing router/test code
+- `https://trpc.io/docs/server/routers` (fetch via Context7 or WebFetch when ready) — `createCaller` invocation shape for tests
+- Check `package.json` — `next`, `@trpc/server`, `@trpc/react-query`, `@tanstack/react-query` versions are pinned; confirm the docs match
 
 `AGENTS.md` says: *"Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices."* Do that. Do not assume patterns from memory.
 
-If anything in this plan conflicts with what the Next.js 16 docs say, follow the docs and update the plan.
+If anything in this plan conflicts with the Next.js 16 docs, the tRPC v11 docs, or the architecture plan, follow the docs and update the plan.
 
 ---
 
@@ -32,29 +34,30 @@ If anything in this plan conflicts with what the Next.js 16 docs say, follow the
 
 ### New files
 - `src/lib/server/profiles.ts` — Firestore CRUD for `EntityProfile`; seed on first read
-- `src/lib/server/sender-identity.ts` — `resolveDirectSenderIdentity(senderEmail, senderName, profiles)` returning `SenderIdentity | null`
-- `src/lib/server/classification-schema.ts` — the shared Zod schema + TypeScript types for the new `Email` / `EmailAction` / `SenderIdentity` shape
-- `src/lib/server/digest-prompt.ts` — prompt builder that takes `rawEmails`, `profiles`, and `preResolvedIdentities` and returns the LLM prompt string
-- `src/app/api/profiles/route.ts` — GET list / POST upsert
-- `src/app/api/profiles/learn-domain/route.ts` — POST `{ profileId, domain }` → append to `knownDomains`
+- `src/lib/server/sender-identity.ts` — `resolveDirectSenderIdentity(rawFrom, profiles)`; `parseFrom` backed by the `email-addresses` library
+- `src/lib/server/classification-schema.ts` — shared Zod schema + TypeScript types for the new `Email` / `EmailAction` / `SenderIdentity` shape
+- `src/lib/server/digest-prompt.ts` — prompt builder taking `rawEmails`, `profiles`, `preResolvedIdentities`, and a `now` reference; uses `date-fns-tz` to render ISO-local-time strings
+- `src/server/trpc/routers/profiles.ts` — new tRPC router with `list`, `upsert`, `learnDomain` procedures
 - `src/components/inbox/learn-domain-banner.tsx` — client component for the "Remember this domain?" prompt
 - `src/lib/action-compat.ts` — compatibility shim translating new action status enum ↔ the old UI's `PENDING` / `APPROVED` / `DISMISSED`
 - `tests/server/profiles.test.ts`
 - `tests/server/sender-identity.test.ts`
 - `tests/server/classification-schema.test.ts`
 - `tests/server/digest-prompt.test.ts`
-- `tests/api/profiles.test.ts`
-- `tests/api/profiles-learn-domain.test.ts`
-- `tests/api/inbox-digest-v2.test.ts`
+- `tests/server/trpc/routers/profiles.test.ts`
+- `tests/server/trpc/routers/inbox.test.ts` — REPLACES the Phase-1-parity version from the architecture migration
 - `tests/fixtures/emails-by-classification.ts` — fixture data for all 6 classifications
+- `tests/fixtures/emails-by-classification.test.ts`
 - `tests/lib/action-compat.test.ts`
 
 ### Modified files
-- `src/lib/store.tsx` — `EntityProfile` gains `knownDomains` + `knownSenders`; `Email` gains `classification` + `senderIdentity` + `hubStatus`; `EmailAction` gains `sourceQuote` + `confidence` + new status enum; `initialProfiles` removed; profiles hydrate from `/api/profiles`; `appendKnownDomain` added
-- `src/app/api/inbox/digest/route.ts` — full rewrite: new Zod schema, sender resolver integration, new prompt, richer output
-- `src/app/inbox/page.tsx` — minimal updates to render via compatibility shim (no redesign; Phase 3 handles that)
-- `src/app/page.tsx` — if it renders emails in the Bouncer widget, add the same compatibility import (verify during Task 12)
-- `tests/api/inbox-digest.test.ts` — rename to `tests/api/inbox-digest-v2.test.ts` (see Task 10) or expand to cover the new schema
+- `src/lib/store.tsx` — `EntityProfile` gains `knownDomains` + `knownSenders`; `Email` gains `classification` + `senderIdentity` + `hubStatus` + richer `attachments`; `EmailAction` gains `sourceQuote` + `confidence` + new status enum; `initialProfiles` removed; profiles hydrate via `trpc.profiles.list.useQuery()`; `appendKnownDomain` wraps `trpc.profiles.learnDomain.useMutation()`
+- `src/server/trpc/routers/inbox.ts` — full rewrite of the `digest` procedure: new Zod schema, sender resolver integration, new prompt, richer output, `hubStatus: 'UNREAD'` stamping
+- `src/server/trpc/root.ts` — mount the new `profilesRouter` under `profiles`
+- `src/app/inbox/page.tsx` — minimal updates to render via the compatibility shim + mount the learn-domain banner (no redesign; Phase 3 handles that)
+- `src/app/page.tsx` — if it renders emails in the Bouncer widget with action-status checks, thread through the shim (verified during Task 14)
+- `src/lib/server/gmail-fetcher.ts` — if it doesn't already surface attachment metadata, extend the returned shape
+- `package.json` / `package-lock.json` — `date-fns`, `date-fns-tz`, `email-addresses`
 
 ### Out of scope for Phase 2
 - Three-pane `/inbox` UI redesign (Phase 3)
@@ -69,20 +72,56 @@ If anything in this plan conflicts with what the Next.js 16 docs say, follow the
 
 These are environment/infrastructure items the implementing agent cannot do alone.
 
-- [ ] **P1. Phase 1 must be merged or at least stable.** Confirm `main` (or your working branch) includes `src/lib/server/accounts.ts`, `src/lib/server/google-oauth.ts`, `src/lib/server/gmail-fetcher.ts`, and `/api/inbox/digest/route.ts` with multi-account fetch. Run `git log --oneline -20` to confirm.
-- [ ] **P2. Firestore rules for new collection.** The `users/{uid}/profiles/{profileId}` collection needs the same "owner can read/write" rule as accounts. If project uses Firestore Security Rules, update `firestore.rules` in the same PR. (If rules live elsewhere, note the location and flag to Mary.)
-- [ ] **P3. Environment variables.** No new env vars required; Phase 2 reuses `FIREBASE_ADMIN_SA_JSON`, `TOKEN_ENCRYPTION_KEY`, `OPENAI_API_KEY`.
+- [ ] **P1. Phase 1 merged.** Confirm `main` includes `src/lib/server/accounts.ts`, `google-oauth.ts`, `gmail-fetcher.ts`, `session.ts`, `firebase-admin.ts`, and encrypted refresh-token storage. Run `git log --oneline -40` and grep for "Merge feature/inbox-phase-1".
+- [ ] **P2. Architecture migration merged.** Confirm `main` includes `src/server/trpc/index.ts`, `src/server/trpc/context.ts`, `src/server/trpc/root.ts`, `src/server/trpc/routers/inbox.ts` (Phase-1-parity), `src/server/trpc/routers/accounts.ts`, `src/app/api/trpc/[trpc]/route.ts`, `src/lib/trpc/client.ts`, `src/lib/trpc/provider.tsx`, and a `store.tsx` that imports from `@/lib/trpc/client`. If you do not see these files, stop and unblock the architecture migration first.
+- [ ] **P3. Firestore rules for new collection.** The `users/{uid}/profiles/{profileId}` collection needs the same "owner can read/write" rule as accounts. If the project uses Firestore Security Rules, update `firestore.rules` in the same PR. (If rules live elsewhere, note the location and flag to Mary.)
+- [ ] **P4. Environment variables.** No new env vars required; Phase 2 reuses `FIREBASE_ADMIN_SA_JSON`, `TOKEN_ENCRYPTION_KEY`, `OPENAI_API_KEY`.
+- [ ] **P5. Create the working branch.** Run `git checkout main && git pull && git checkout -b feature/inbox-phase-2`.
+- [ ] **P6. Confirm baseline is green.** Run `npx tsc --noEmit && npx jest && npm run lint`. All three must pass before starting.
 
 ---
 
 ## Tasks
 
-### Task 1: Extend shared TypeScript types
-
-Expand `Email`, `EmailAction`, `EntityProfile` in `src/lib/store.tsx` to match the spec. Keep existing fields so the current UI continues to render.
+### Task 1: Install `date-fns` / `date-fns-tz` / `email-addresses`
 
 **Files:**
-- Modify: `src/lib/store.tsx:34-67`
+- Modify: `package.json`, `package-lock.json`
+
+- [ ] **Step 1: Install production deps**
+
+Run:
+
+```bash
+npm install date-fns date-fns-tz email-addresses
+npm install --save-dev @types/email-addresses
+```
+
+Expected: `package.json` gains `date-fns`, `date-fns-tz`, `email-addresses`, and the matching `@types/email-addresses` dev dep. `date-fns` and `date-fns-tz` ship their own types.
+
+- [ ] **Step 2: Sanity check**
+
+Run: `npx tsc --noEmit`
+Expected: zero errors (no new code yet).
+
+Run: `npx jest`
+Expected: the existing baseline suite still passes.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add package.json package-lock.json
+git commit -m "chore(deps): add date-fns, date-fns-tz, email-addresses for Phase 2"
+```
+
+---
+
+### Task 2: Extend shared TypeScript types
+
+Expand `Email`, `EmailAction`, `EntityProfile`, and add `SenderIdentity` / `Attachment` in `src/lib/store.tsx` to match the spec. Keep existing fields so the current UI continues to render through the shim.
+
+**Files:**
+- Modify: `src/lib/store.tsx`
 
 - [ ] **Step 1: Update `EntityProfile`**
 
@@ -151,7 +190,7 @@ export type EmailAction = {
 }
 ```
 
-Note: the old union `"CALENDAR_INVITE" | "TODO_ITEM" | "OTHER"` is intentionally removed. The shim in Task 11 handles UI translation.
+Note: the old union `"CALENDAR_INVITE" | "TODO_ITEM" | "OTHER"` is intentionally removed. The shim in Task 3 handles UI translation.
 
 - [ ] **Step 4: Replace `Email` type**
 
@@ -188,7 +227,7 @@ export type Email = {
 - [ ] **Step 5: Run the type-checker**
 
 Run: `npx tsc --noEmit`
-Expected: failures in `src/app/inbox/page.tsx` (old action status names) and `src/lib/store.tsx` (old action type strings). These are addressed in Tasks 11–12. Do not "fix" them yet.
+Expected: failures in `src/app/inbox/page.tsx` (old action status names) and possibly `src/lib/store.tsx` (old action type strings inside `actOnEmailAction`) and `src/app/page.tsx` (Bouncer widget). These are addressed in Tasks 3 and 13–14. Do not "fix" them yet.
 
 - [ ] **Step 6: Commit**
 
@@ -199,9 +238,9 @@ git commit -m "feat(types): expand Email/EmailAction/EntityProfile for Phase 2"
 
 ---
 
-### Task 2: Action-status compatibility shim
+### Task 3: Action-status compatibility shim
 
-Give the existing UI something to render while the new status enum lands. The shim is temporary; Phase 3 deletes it.
+Give the existing UI something to render while the new status enum lands. The shim is temporary; Phase 3 deletes it when the UI is redesigned.
 
 **Files:**
 - Create: `src/lib/action-compat.ts`
@@ -301,102 +340,31 @@ export function isActionable(status: EmailActionStatus): boolean {
 Run: `npx jest tests/lib/action-compat.test.ts`
 Expected: PASS (6 tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Patch `/inbox` page to use the shim**
 
-```bash
-git add src/lib/action-compat.ts tests/lib/action-compat.test.ts
-git commit -m "feat(inbox): add action-status compatibility shim"
-```
-
----
-
-### Task 3: Patch `/inbox` page to use the shim
-
-Fix the type errors introduced by Task 1 by translating new statuses through the shim. No UI redesign — identical visuals to today.
-
-**Files:**
-- Modify: `src/app/inbox/page.tsx:52, 115, 125, 131`
-
-- [ ] **Step 1: Import the shim at the top of the file**
-
-In `src/app/inbox/page.tsx`, add below the existing `import { useHub } ...` line:
+In `src/app/inbox/page.tsx`, add near the existing imports:
 
 ```ts
 import { toLegacyStatus, isActionable } from "@/lib/action-compat"
 ```
 
-- [ ] **Step 2: Replace the three status checks**
+Then replace each status check. Specifically:
 
-In `src/app/inbox/page.tsx:52` replace:
+- Replace `email.suggestedActions?.some(a => a.status === 'PENDING')` with `email.suggestedActions?.some(a => isActionable(a.status))`.
+- Replace `action.status === 'PENDING'` (wherever it appears) with `isActionable(action.status)`.
+- Replace any `Status: {action.status}` label with `Status: {toLegacyStatus(action.status)}`.
+- If the file contains `action.type.replace('_', ' ')`, upgrade to `action.type.replace(/_/g, ' ')` so the new two-underscore types like `CALENDAR_EVENT` format correctly.
 
-```tsx
-{email.suggestedActions?.some(a => a.status === 'PENDING') && (
-```
-
-with:
-
-```tsx
-{email.suggestedActions?.some(a => isActionable(a.status)) && (
-```
-
-In `src/app/inbox/page.tsx:115` replace:
-
-```tsx
-<div key={action.id} className={`flex flex-col bg-white border ${action.status === 'PENDING' ? 'border-foreground' : 'border-border opacity-50 grayscale'} p-5 shadow-[4px_4px_0_rgba(0,0,0,0.05)] transition-all`}>
-```
-
-with:
-
-```tsx
-<div key={action.id} className={`flex flex-col bg-white border ${isActionable(action.status) ? 'border-foreground' : 'border-border opacity-50 grayscale'} p-5 shadow-[4px_4px_0_rgba(0,0,0,0.05)] transition-all`}>
-```
-
-In `src/app/inbox/page.tsx:118` replace:
-
-```tsx
-<span className="text-[10px] font-bold uppercase tracking-widest text-foreground/40 block mb-2">{action.type.replace('_', ' ')}</span>
-```
-
-with:
-
-```tsx
-<span className="text-[10px] font-bold uppercase tracking-widest text-foreground/40 block mb-2">{action.type.replace(/_/g, ' ')}</span>
-```
-
-In `src/app/inbox/page.tsx:125` replace:
-
-```tsx
-{action.status === 'PENDING' ? (
-```
-
-with:
-
-```tsx
-{isActionable(action.status) ? (
-```
-
-In `src/app/inbox/page.tsx:131` replace:
-
-```tsx
-<span className="text-[10px] font-bold uppercase tracking-widest text-foreground/40 text-center bg-muted py-2 w-full block border border-border/50">Status: {action.status}</span>
-```
-
-with:
-
-```tsx
-<span className="text-[10px] font-bold uppercase tracking-widest text-foreground/40 text-center bg-muted py-2 w-full block border border-border/50">Status: {toLegacyStatus(action.status)}</span>
-```
-
-- [ ] **Step 3: Run the type-checker**
+- [ ] **Step 6: Run the type-checker**
 
 Run: `npx tsc --noEmit`
-Expected: `src/app/inbox/page.tsx` errors cleared. Remaining errors will be in `src/lib/store.tsx` around the old `CALENDAR_INVITE` / `TODO_ITEM` action-construction paths (cleaned up in Task 12).
+Expected: `src/app/inbox/page.tsx` errors cleared. Remaining errors will be in `src/lib/store.tsx` (the `CALENDAR_INVITE` / `TODO_ITEM` branches inside `actOnEmailAction`) and possibly `src/app/page.tsx`. These are fixed in Tasks 13–14.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/app/inbox/page.tsx
-git commit -m "chore(inbox): route existing UI through action-compat shim"
+git add src/lib/action-compat.ts tests/lib/action-compat.test.ts src/app/inbox/page.tsx
+git commit -m "feat(inbox): action-status compatibility shim + route existing UI through it"
 ```
 
 ---
@@ -529,7 +497,7 @@ export async function appendKnownDomain(uid: string, profileId: string, domain: 
   const existing = await getProfile(uid, profileId)
   if (!existing) return
   const known = new Set(existing.knownDomains ?? [])
-  known.add(domain)
+  known.add(domain.toLowerCase())
   await upsertProfile(uid, { ...existing, knownDomains: Array.from(known) })
 }
 
@@ -573,278 +541,9 @@ git commit -m "feat(profiles): Firestore CRUD + seed helper for EntityProfile"
 
 ---
 
-### Task 5: `/api/profiles` route
+### Task 5: Sender-identity direct resolver (backed by `email-addresses`)
 
-Expose list (GET) and upsert (POST) endpoints authenticated by Firebase ID token.
-
-**Files:**
-- Create: `src/app/api/profiles/route.ts`
-- Create: `tests/api/profiles.test.ts`
-
-- [ ] **Step 1: Write the failing test**
-
-Create `tests/api/profiles.test.ts`:
-
-```ts
-import { GET, POST } from '@/app/api/profiles/route'
-import { getUidFromRequest } from '@/lib/server/session'
-import { seedProfilesIfEmpty, upsertProfile, listProfiles } from '@/lib/server/profiles'
-
-jest.mock('@/lib/server/session')
-jest.mock('@/lib/server/profiles')
-
-describe('/api/profiles', () => {
-  beforeEach(() => {
-    jest.clearAllMocks()
-    ;(getUidFromRequest as jest.Mock).mockResolvedValue('mary-uid')
-  })
-
-  it('GET returns seeded profiles on first call', async () => {
-    ;(seedProfilesIfEmpty as jest.Mock).mockResolvedValue([
-      { id: 'mary', name: 'Mary', type: 'Adult', currentContext: '', preferences: [], routines: [], sizes: {}, medicalNotes: '' },
-    ])
-    const req = new Request('http://x/api/profiles', { headers: { Authorization: 'Bearer t' } })
-    const res = await GET(req)
-    const body = await res.json()
-    expect(res.status).toBe(200)
-    expect(body.profiles).toHaveLength(1)
-    expect(seedProfilesIfEmpty).toHaveBeenCalledWith('mary-uid')
-  })
-
-  it('POST upserts a profile', async () => {
-    ;(upsertProfile as jest.Mock).mockResolvedValue(undefined)
-    ;(listProfiles as jest.Mock).mockResolvedValue([
-      { id: 'ellie', name: 'Ellie', type: 'Child', currentContext: 'Test', preferences: [], routines: [], sizes: {}, medicalNotes: '' },
-    ])
-    const req = new Request('http://x/api/profiles', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: 'ellie', name: 'Ellie', type: 'Child', currentContext: 'Test', preferences: [], routines: [], sizes: {}, medicalNotes: '' }),
-    })
-    const res = await POST(req)
-    const body = await res.json()
-    expect(res.status).toBe(200)
-    expect(upsertProfile).toHaveBeenCalledWith('mary-uid', expect.objectContaining({ id: 'ellie' }))
-    expect(body.profiles).toHaveLength(1)
-  })
-
-  it('POST rejects invalid payload', async () => {
-    const req = new Request('http://x/api/profiles', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'missing id' }),
-    })
-    const res = await POST(req)
-    expect(res.status).toBe(400)
-  })
-})
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx jest tests/api/profiles.test.ts`
-Expected: FAIL — module not found.
-
-- [ ] **Step 3: Implement**
-
-Create `src/app/api/profiles/route.ts`:
-
-```ts
-import { NextResponse } from 'next/server'
-import { z } from 'zod'
-import { getUidFromRequest, HttpError } from '@/lib/server/session'
-import {
-  listProfiles,
-  upsertProfile,
-  seedProfilesIfEmpty,
-} from '@/lib/server/profiles'
-
-const ProfileSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  type: z.enum(['Adult', 'Child', 'Pet']),
-  currentContext: z.string(),
-  preferences: z.array(z.string()),
-  routines: z.array(z.string()),
-  sizes: z.record(z.string(), z.string()),
-  medicalNotes: z.string(),
-  knownDomains: z.array(z.string()).optional(),
-  knownSenders: z.array(z.string()).optional(),
-})
-
-export async function GET(req: Request) {
-  try {
-    const uid = await getUidFromRequest(req)
-    const profiles = await seedProfilesIfEmpty(uid)
-    return NextResponse.json({ profiles })
-  } catch (e: unknown) {
-    const err = e as { status?: number; message?: string }
-    const status = e instanceof HttpError ? e.status : (err.status ?? 500)
-    return NextResponse.json({ error: err.message ?? 'Unknown error' }, { status })
-  }
-}
-
-export async function POST(req: Request) {
-  try {
-    const uid = await getUidFromRequest(req)
-    const body = await req.json().catch(() => null)
-    const parsed = ProfileSchema.safeParse(body)
-    if (!parsed.success) {
-      return NextResponse.json({ error: 'Invalid profile', details: parsed.error.issues }, { status: 400 })
-    }
-    await upsertProfile(uid, parsed.data)
-    const profiles = await listProfiles(uid)
-    return NextResponse.json({ profiles })
-  } catch (e: unknown) {
-    const err = e as { status?: number; message?: string }
-    const status = e instanceof HttpError ? e.status : (err.status ?? 500)
-    return NextResponse.json({ error: err.message ?? 'Unknown error' }, { status })
-  }
-}
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `npx jest tests/api/profiles.test.ts`
-Expected: PASS (3 tests).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/app/api/profiles/route.ts tests/api/profiles.test.ts
-git commit -m "feat(profiles): GET/POST /api/profiles"
-```
-
----
-
-### Task 6: `/api/profiles/learn-domain` route
-
-Dedicated endpoint for the learning loop. Always appends, never removes.
-
-**Files:**
-- Create: `src/app/api/profiles/learn-domain/route.ts`
-- Create: `tests/api/profiles-learn-domain.test.ts`
-
-- [ ] **Step 1: Write the failing test**
-
-Create `tests/api/profiles-learn-domain.test.ts`:
-
-```ts
-import { POST } from '@/app/api/profiles/learn-domain/route'
-import { getUidFromRequest } from '@/lib/server/session'
-import { appendKnownDomain, getProfile } from '@/lib/server/profiles'
-
-jest.mock('@/lib/server/session')
-jest.mock('@/lib/server/profiles')
-
-describe('POST /api/profiles/learn-domain', () => {
-  beforeEach(() => {
-    jest.clearAllMocks()
-    ;(getUidFromRequest as jest.Mock).mockResolvedValue('mary-uid')
-    ;(getProfile as jest.Mock).mockResolvedValue({
-      id: 'annie',
-      name: 'Annie',
-      type: 'Child',
-      currentContext: '',
-      preferences: [],
-      routines: [],
-      sizes: {},
-      medicalNotes: '',
-      knownDomains: ['audaucy.org'],
-    })
-    ;(appendKnownDomain as jest.Mock).mockResolvedValue(undefined)
-  })
-
-  it('appends a new domain', async () => {
-    const req = new Request('http://x/api/profiles/learn-domain', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileId: 'annie', domain: 'art.audaucy.org' }),
-    })
-    const res = await POST(req)
-    expect(res.status).toBe(200)
-    expect(appendKnownDomain).toHaveBeenCalledWith('mary-uid', 'annie', 'art.audaucy.org')
-  })
-
-  it('rejects missing fields', async () => {
-    const req = new Request('http://x/api/profiles/learn-domain', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileId: 'annie' }),
-    })
-    const res = await POST(req)
-    expect(res.status).toBe(400)
-  })
-
-  it('rejects bare domain with protocol', async () => {
-    const req = new Request('http://x/api/profiles/learn-domain', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileId: 'annie', domain: 'https://audaucy.org' }),
-    })
-    const res = await POST(req)
-    expect(res.status).toBe(400)
-  })
-})
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx jest tests/api/profiles-learn-domain.test.ts`
-Expected: FAIL — module not found.
-
-- [ ] **Step 3: Implement**
-
-Create `src/app/api/profiles/learn-domain/route.ts`:
-
-```ts
-import { NextResponse } from 'next/server'
-import { z } from 'zod'
-import { getUidFromRequest, HttpError } from '@/lib/server/session'
-import { appendKnownDomain } from '@/lib/server/profiles'
-
-const DomainRe = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i
-
-const BodySchema = z.object({
-  profileId: z.string().min(1),
-  domain: z.string().regex(DomainRe, 'Expect a bare domain like "example.com"'),
-})
-
-export async function POST(req: Request) {
-  try {
-    const uid = await getUidFromRequest(req)
-    const body = await req.json().catch(() => null)
-    const parsed = BodySchema.safeParse(body)
-    if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid' }, { status: 400 })
-    }
-    await appendKnownDomain(uid, parsed.data.profileId, parsed.data.domain.toLowerCase())
-    return NextResponse.json({ ok: true })
-  } catch (e: unknown) {
-    const err = e as { status?: number; message?: string }
-    const status = e instanceof HttpError ? e.status : (err.status ?? 500)
-    return NextResponse.json({ error: err.message ?? 'Unknown error' }, { status })
-  }
-}
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `npx jest tests/api/profiles-learn-domain.test.ts`
-Expected: PASS (3 tests).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/app/api/profiles/learn-domain/route.ts tests/api/profiles-learn-domain.test.ts
-git commit -m "feat(profiles): POST /api/profiles/learn-domain"
-```
-
----
-
-### Task 7: Sender-identity direct resolver
-
-Pure function: given a sender and the user's profile list, pick the Life Graph person/org by `knownDomains` / `knownSenders`. LLM-inferred matching happens in the prompt (Task 9), not here.
+Pure function: given a sender and the user's profile list, pick the Life Graph person/org by `knownDomains` / `knownSenders`. LLM-inferred matching happens in the prompt (Task 7), not here. The From-header parser uses `email-addresses.parseOneAddress()` — no hand-rolled regex.
 
 **Files:**
 - Create: `src/lib/server/sender-identity.ts`
@@ -891,6 +590,15 @@ describe('parseFrom', () => {
       email: 'office@blessedsacrament.org',
     })
   })
+  it('handles names with commas via quoted form', () => {
+    expect(parseFrom('"Redd, Ms." <office@blessedsacrament.org>')).toEqual({
+      name: 'Redd, Ms.',
+      email: 'office@blessedsacrament.org',
+    })
+  })
+  it('returns empty name+email for unparsable input', () => {
+    expect(parseFrom('not an address at all')).toEqual({ name: '', email: '' })
+  })
 })
 
 describe('resolveDirectSenderIdentity', () => {
@@ -918,6 +626,11 @@ describe('resolveDirectSenderIdentity', () => {
     const match = resolveDirectSenderIdentity('OFFICE@BlessedSacrament.ORG', profiles)
     expect(match?.personId).toBe('ellie')
   })
+
+  it('returns null for unparsable From headers', () => {
+    const match = resolveDirectSenderIdentity('not an address', profiles)
+    expect(match).toBeNull()
+  })
 })
 ```
 
@@ -926,11 +639,12 @@ describe('resolveDirectSenderIdentity', () => {
 Run: `npx jest tests/server/sender-identity.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement using `email-addresses`**
 
 Create `src/lib/server/sender-identity.ts`:
 
 ```ts
+import addrs from 'email-addresses'
 import type { EntityProfile, SenderIdentity } from '@/lib/store'
 
 export interface ParsedFrom {
@@ -939,15 +653,14 @@ export interface ParsedFrom {
 }
 
 export function parseFrom(raw: string): ParsedFrom {
-  const trimmed = raw.trim()
-  const match = trimmed.match(/^(?:"?([^"<]*?)"?\s*)?<([^>]+)>$/)
-  if (match) {
-    return { name: (match[1] ?? '').trim(), email: match[2].trim() }
+  const trimmed = (raw ?? '').trim()
+  if (!trimmed) return { name: '', email: '' }
+  const parsed = addrs.parseOneAddress(trimmed)
+  if (!parsed || parsed.type !== 'mailbox') return { name: '', email: '' }
+  return {
+    name: (parsed.name ?? '').trim(),
+    email: (parsed.address ?? '').trim(),
   }
-  if (trimmed.includes('@')) {
-    return { name: '', email: trimmed }
-  }
-  return { name: trimmed, email: '' }
 }
 
 function normalizeSenderString(s: string): string {
@@ -993,23 +706,25 @@ export function resolveDirectSenderIdentity(
 }
 ```
 
+Note: `email-addresses` returns `ParsedMailbox` when `parseOneAddress` succeeds on a single mailbox address. If the input is a group, the discriminant will be `'group'` — we bail to empty in that case. See the [library README](https://github.com/jackbearheart/email-addresses) if you hit an edge.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx jest tests/server/sender-identity.test.ts`
-Expected: PASS (8 tests — 3 in parseFrom, 5 in resolveDirectSenderIdentity).
+Expected: PASS (11 tests — 5 in parseFrom, 6 in resolveDirectSenderIdentity).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/server/sender-identity.ts tests/server/sender-identity.test.ts
-git commit -m "feat(inbox): direct sender-identity resolver"
+git commit -m "feat(inbox): direct sender-identity resolver backed by email-addresses"
 ```
 
 ---
 
-### Task 8: New classification Zod schema
+### Task 6: Classification Zod schema
 
-Shared schema module — consumed by the prompt builder, the digest route, and the tests.
+Shared schema module — consumed by the prompt builder, the `inbox.digest` procedure, and the fixtures. Keep enums as `as const` tuples so call sites can reflect on the value list.
 
 **Files:**
 - Create: `src/lib/server/classification-schema.ts`
@@ -1163,9 +878,9 @@ git commit -m "feat(inbox): Zod schema for 6 classifications + 3 action types"
 
 ---
 
-### Task 9: Digest prompt builder
+### Task 7: Digest prompt builder with `date-fns-tz`
 
-Pure function that composes the LLM prompt from raw emails + profiles + pre-resolved identities. Keeps prompt-string concerns out of the route handler.
+Pure function that composes the LLM prompt from raw emails + profiles + pre-resolved identities + a reference `now`. Epoch-ms dates are rendered as ISO-local-time strings (`2026-04-21T08:00:00-04:00`) so the LLM never has to interpret raw epoch numbers and DST is handled by the library.
 
 **Files:**
 - Create: `src/lib/server/digest-prompt.ts`
@@ -1181,50 +896,79 @@ import type { EntityProfile } from '@/lib/store'
 
 describe('buildDigestPrompt', () => {
   const profiles: EntityProfile[] = [
-    { id: 'ellie', name: 'Ellie', type: 'Child', currentContext: 'Gymnastics Tues/Thurs', preferences: [], routines: [], sizes: {}, medicalNotes: 'Peanut allergy', knownDomains: ['blessedsacrament.org'] },
+    {
+      id: 'ellie', name: 'Ellie', type: 'Child',
+      currentContext: 'Gymnastics Tues/Thurs',
+      preferences: [], routines: [], sizes: {},
+      medicalNotes: 'Peanut allergy',
+      knownDomains: ['blessedsacrament.org'],
+    },
   ]
 
   const rawEmails = [
-    { id: 'm1', subject: 'Zoo trip', sender: 'Ms. Redd <office@blessedsacrament.org>', snippet: 'Zoo trip Thu 8am', fullBody: 'Zoo trip Thursday 8am. Peanut-free lunches please.', date: 1, accountId: 'a1' },
+    {
+      id: 'm1',
+      subject: 'Zoo trip',
+      sender: 'Ms. Redd <office@blessedsacrament.org>',
+      snippet: 'Zoo Thu 8am',
+      fullBody: 'Zoo trip Thursday 8am. Peanut-free lunches please.',
+      date: 1_745_000_000_000,
+      accountId: 'a1',
+    },
   ]
 
   const preResolved: Record<string, { personId?: string; orgName?: string; confidence: string } | null> = {
     m1: { personId: 'ellie', confidence: 'medium' },
   }
 
+  const now = new Date('2026-04-21T09:00:00-04:00')
+
   it('includes all six classification names verbatim', () => {
-    const prompt = buildDigestPrompt(rawEmails, profiles, preResolved)
+    const prompt = buildDigestPrompt({ rawEmails, profiles, preResolved, now, timeZone: 'America/New_York' })
     for (const c of ['CALENDAR_EVENT', 'TODO', 'NEEDS_REPLY', 'WAITING_ON', 'FYI', 'NEWSLETTER']) {
       expect(prompt).toContain(c)
     }
   })
 
   it('includes the three action type names verbatim', () => {
-    const prompt = buildDigestPrompt(rawEmails, profiles, preResolved)
+    const prompt = buildDigestPrompt({ rawEmails, profiles, preResolved, now, timeZone: 'America/New_York' })
     expect(prompt).toMatch(/action types.*CALENDAR_EVENT.*TODO.*NEEDS_REPLY/s)
   })
 
   it('embeds each Life Graph profile with knownDomains', () => {
-    const prompt = buildDigestPrompt(rawEmails, profiles, preResolved)
+    const prompt = buildDigestPrompt({ rawEmails, profiles, preResolved, now, timeZone: 'America/New_York' })
     expect(prompt).toContain('Ellie')
     expect(prompt).toContain('Peanut allergy')
     expect(prompt).toContain('blessedsacrament.org')
   })
 
   it('injects pre-resolved sender identity hints keyed by email id', () => {
-    const prompt = buildDigestPrompt(rawEmails, profiles, preResolved)
+    const prompt = buildDigestPrompt({ rawEmails, profiles, preResolved, now, timeZone: 'America/New_York' })
     expect(prompt).toMatch(/m1.*personId.*ellie/s)
   })
 
   it('contains the sourceQuote and no-invented-dates instructions', () => {
-    const prompt = buildDigestPrompt(rawEmails, profiles, preResolved)
+    const prompt = buildDigestPrompt({ rawEmails, profiles, preResolved, now, timeZone: 'America/New_York' })
     expect(prompt.toLowerCase()).toContain('sourcequote')
     expect(prompt.toLowerCase()).toContain('never invent')
   })
 
-  it('embeds the raw emails as JSON', () => {
-    const prompt = buildDigestPrompt(rawEmails, profiles, preResolved)
-    expect(prompt).toContain('"id": "m1"')
+  it('renders email date as ISO-local string, not raw epoch ms', () => {
+    const prompt = buildDigestPrompt({ rawEmails, profiles, preResolved, now, timeZone: 'America/New_York' })
+    // 1_745_000_000_000 → 2025-04-18T12:53:20-04:00
+    expect(prompt).toContain('2025-04-18T12:53:20-04:00')
+    expect(prompt).not.toContain('1745000000000')
+  })
+
+  it('emits "now" as an ISO-local string including timezone offset', () => {
+    const prompt = buildDigestPrompt({ rawEmails, profiles, preResolved, now, timeZone: 'America/New_York' })
+    expect(prompt).toContain('2026-04-21T09:00:00-04:00')
+    expect(prompt).toContain('America/New_York')
+  })
+
+  it('instructs the LLM to emit dates as epoch milliseconds even though the input is ISO', () => {
+    const prompt = buildDigestPrompt({ rawEmails, profiles, preResolved, now, timeZone: 'America/New_York' })
+    expect(prompt.toLowerCase()).toContain('epoch millisecond')
   })
 })
 ```
@@ -1239,6 +983,7 @@ Expected: FAIL — module not found.
 Create `src/lib/server/digest-prompt.ts`:
 
 ```ts
+import { formatInTimeZone } from 'date-fns-tz'
 import type { EntityProfile } from '@/lib/store'
 
 export interface PromptRawEmail {
@@ -1257,6 +1002,16 @@ export interface PreResolvedIdentity {
   confidence: string
 }
 
+export interface BuildDigestPromptInput {
+  rawEmails: PromptRawEmail[]
+  profiles: EntityProfile[]
+  preResolved: Record<string, PreResolvedIdentity | null>
+  now: Date
+  timeZone: string
+}
+
+const ISO_LOCAL = "yyyy-MM-dd'T'HH:mm:ssxxx"
+
 const SYSTEM = `You are a Chief of Staff AI. You classify the user's unread emails and extract committable actions.
 
 Emit ONE classification per email from this enum:
@@ -1268,8 +1023,8 @@ Emit ONE classification per email from this enum:
 - NEWSLETTER — subscription content; auto-dimmed by the UI
 
 Emit zero or more suggestedActions per email. Action types are exactly:
-- CALENDAR_EVENT — fields: title, date (epoch ms), time (12-hour "h:mm AM/PM"), context
-- TODO — fields: title, date (due, epoch ms or null), context
+- CALENDAR_EVENT — fields: title, date (epoch milliseconds), time (12-hour "h:mm AM/PM"), context
+- TODO — fields: title, date (due, epoch milliseconds or null), context
 - NEEDS_REPLY — fields: title (the subject of the reply), context
 
 WAITING_ON, FYI, and NEWSLETTER classifications MUST produce zero actions.
@@ -1279,14 +1034,12 @@ Rules:
 - Every action MUST carry a confidence value: "high", "medium", or "low".
 - Never invent dates. If the email does not specify a date and you cannot infer one unambiguously, set date to null and use confidence "low".
 - Match the sender to a Life Graph profile (personId) or organization (orgName) when possible. If the user has pre-resolved an identity for an email id (provided below), use it as a strong hint but override if the email content clearly points elsewhere — mark confidence accordingly.
-- Dates MUST be epoch milliseconds in the user's local reference. If a date string says "Thursday at 8am" and "now" is 2026-04-21, resolve to the next Thursday 8am local.
+- Dates you EMIT must be epoch milliseconds. Dates in the INPUT are rendered as ISO-8601 local-time strings with timezone offset — resolve relative references ("Thursday at 8am") against the "now" value provided and return the resulting instant as epoch milliseconds.
 `
 
-export function buildDigestPrompt(
-  rawEmails: PromptRawEmail[],
-  profiles: EntityProfile[],
-  preResolved: Record<string, PreResolvedIdentity | null>
-): string {
+export function buildDigestPrompt(input: BuildDigestPromptInput): string {
+  const { rawEmails, profiles, preResolved, now, timeZone } = input
+
   const profileBlock = profiles.map(p => ({
     id: p.id,
     name: p.name,
@@ -1297,8 +1050,26 @@ export function buildDigestPrompt(
     knownSenders: p.knownSenders ?? [],
   }))
 
+  const rawEmailsBlock = rawEmails.map(e => ({
+    id: e.id,
+    subject: e.subject,
+    sender: e.sender,
+    snippet: e.snippet ?? '',
+    fullBody: e.fullBody,
+    sentAt: formatInTimeZone(new Date(e.date), timeZone, ISO_LOCAL),
+    accountId: e.accountId,
+  }))
+
+  const nowBlock = {
+    instant: formatInTimeZone(now, timeZone, ISO_LOCAL),
+    timeZone,
+  }
+
   return [
     SYSTEM,
+    '',
+    'NOW (use for relative-date resolution):',
+    JSON.stringify(nowBlock, null, 2),
     '',
     'LIFE GRAPH PROFILES (reference for sender identity + context):',
     JSON.stringify(profileBlock, null, 2),
@@ -1307,7 +1078,7 @@ export function buildDigestPrompt(
     JSON.stringify(preResolved, null, 2),
     '',
     'EMAILS TO CLASSIFY:',
-    JSON.stringify(rawEmails, null, 2),
+    JSON.stringify(rawEmailsBlock, null, 2),
     '',
     'Return a single JSON object matching the schema: { emails: [...] }',
   ].join('\n')
@@ -1317,213 +1088,33 @@ export function buildDigestPrompt(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx jest tests/server/digest-prompt.test.ts`
-Expected: PASS (6 tests).
+Expected: PASS (8 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/server/digest-prompt.ts tests/server/digest-prompt.test.ts
-git commit -m "feat(inbox): digest prompt builder with 6 classifications + Life Graph"
+git commit -m "feat(inbox): digest prompt builder with date-fns-tz ISO-local dates"
 ```
 
 ---
 
-### Task 10: Rewrite `/api/inbox/digest`
+### Task 8: Extend `gmail-fetcher` to surface attachments
 
-Replace the Phase 1 route with the Phase 2 pipeline: fetch per-account → pre-resolve identities → call LLM → merge → tag with `hubStatus: 'UNREAD'`.
+The Phase 2 `Email` type carries `attachments: Attachment[]`. Confirm the fetcher returns them; extend it if not.
 
 **Files:**
-- Modify: `src/app/api/inbox/digest/route.ts` (full rewrite)
-- Create: `tests/api/inbox-digest-v2.test.ts`
-- Delete: `tests/api/inbox-digest.test.ts` (superseded)
+- Modify: `src/lib/server/gmail-fetcher.ts` (only if it doesn't already return attachments)
+- Create or modify: `tests/server/gmail-fetcher.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Check current shape**
 
-Delete the old test file first:
+Run: `grep -n "attachments" src/lib/server/gmail-fetcher.ts`
+Expected: if no match, proceed with Steps 2–5. If attachments are already returned (including `id`, `filename`, `mimeType`, `size`), skip to Step 6 and note it in the commit message.
 
-```bash
-git rm tests/api/inbox-digest.test.ts
-```
+- [ ] **Step 2: Write the failing test**
 
-Create `tests/api/inbox-digest-v2.test.ts`:
-
-```ts
-import { POST } from '@/app/api/inbox/digest/route'
-import { getUidFromRequest } from '@/lib/server/session'
-import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
-import { refreshAccessToken } from '@/lib/server/google-oauth'
-import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
-import { seedProfilesIfEmpty } from '@/lib/server/profiles'
-import * as aiModule from 'ai'
-
-jest.mock('@/lib/server/session')
-jest.mock('@/lib/server/accounts')
-jest.mock('@/lib/server/google-oauth')
-jest.mock('@/lib/server/gmail-fetcher')
-jest.mock('@/lib/server/profiles')
-jest.mock('ai', () => ({ generateObject: jest.fn() }))
-jest.mock('@ai-sdk/openai', () => ({ openai: jest.fn() }))
-
-const baseRaw = {
-  id: 'm1',
-  subject: 'Zoo trip',
-  sender: 'Ms. Redd <office@blessedsacrament.org>',
-  snippet: 'Zoo Thursday',
-  fullBody: 'Zoo trip Thursday 8am. Peanut-free lunches please.',
-  date: 1,
-}
-
-const baseClassified = {
-  id: 'm1',
-  classification: 'CALENDAR_EVENT',
-  snippet: 'Zoo trip with Ellie on Thursday.',
-  senderIdentity: { personId: 'ellie', confidence: 'high' },
-  suggestedActions: [
-    {
-      id: 'a1',
-      type: 'CALENDAR_EVENT',
-      title: 'Zoo trip',
-      date: 1_745_000_000_000,
-      time: '8:00 AM',
-      context: 'FAMILY',
-      sourceQuote: 'Zoo trip Thursday 8am.',
-      confidence: 'high',
-    },
-  ],
-}
-
-describe('POST /api/inbox/digest (Phase 2)', () => {
-  beforeEach(() => {
-    jest.clearAllMocks()
-    ;(getUidFromRequest as jest.Mock).mockResolvedValue('mary-uid')
-    ;(listAccounts as jest.Mock).mockResolvedValue([{ id: 'a1', email: 'mary@tribe.ai' }])
-    ;(getDecryptedRefreshToken as jest.Mock).mockResolvedValue('rt')
-    ;(refreshAccessToken as jest.Mock).mockResolvedValue({ accessToken: 'at', expiresAt: 0 })
-    ;(fetchUnreadPrimary as jest.Mock).mockResolvedValue([baseRaw])
-    ;(seedProfilesIfEmpty as jest.Mock).mockResolvedValue([
-      {
-        id: 'ellie', name: 'Ellie', type: 'Child',
-        currentContext: '', preferences: [], routines: [], sizes: {}, medicalNotes: 'Peanut allergy',
-        knownDomains: ['blessedsacrament.org'],
-      },
-    ])
-    ;(aiModule.generateObject as jest.Mock).mockResolvedValue({ object: { emails: [baseClassified] } })
-  })
-
-  it('returns richer Email records with classification, senderIdentity, hubStatus, sourceQuote', async () => {
-    const req = new Request('http://x/api/inbox/digest', { method: 'POST', headers: { Authorization: 'Bearer t' } })
-    const res = await POST(req)
-    const body = await res.json()
-    expect(res.status).toBe(200)
-    expect(body.emails).toHaveLength(1)
-    const e = body.emails[0]
-    expect(e.id).toBe('m1')
-    expect(e.classification).toBe('CALENDAR_EVENT')
-    expect(e.senderIdentity).toEqual({ personId: 'ellie', confidence: 'high' })
-    expect(e.hubStatus).toBe('UNREAD')
-    expect(e.suggestedActions[0].sourceQuote).toBe('Zoo trip Thursday 8am.')
-    expect(e.suggestedActions[0].status).toBe('PROPOSED')
-    expect(e.accountId).toBe('a1')
-  })
-
-  it('returns empty array when no accounts return emails', async () => {
-    ;(fetchUnreadPrimary as jest.Mock).mockResolvedValue([])
-    const req = new Request('http://x/api/inbox/digest', { method: 'POST', headers: { Authorization: 'Bearer t' } })
-    const res = await POST(req)
-    const body = await res.json()
-    expect(body.emails).toEqual([])
-    expect(aiModule.generateObject).not.toHaveBeenCalled()
-  })
-
-  it('pre-resolves sender identity and passes it to the prompt', async () => {
-    await POST(new Request('http://x/api/inbox/digest', { method: 'POST', headers: { Authorization: 'Bearer t' } }))
-    const options = (aiModule.generateObject as jest.Mock).mock.calls[0][0]
-    expect(options.prompt).toMatch(/"personId": "ellie"/)
-  })
-
-  it('stamps every raw email with hubStatus=UNREAD even if the LLM omits fields', async () => {
-    ;(aiModule.generateObject as jest.Mock).mockResolvedValue({
-      object: { emails: [{ ...baseClassified, senderIdentity: undefined }] },
-    })
-    const req = new Request('http://x/api/inbox/digest', { method: 'POST', headers: { Authorization: 'Bearer t' } })
-    const res = await POST(req)
-    const body = await res.json()
-    expect(body.emails[0].hubStatus).toBe('UNREAD')
-    expect(body.emails[0].senderIdentity).toBeUndefined()
-  })
-
-  it('preserves fullBody / attachments / accountEmail from the raw fetch', async () => {
-    ;(fetchUnreadPrimary as jest.Mock).mockResolvedValue([
-      { ...baseRaw, attachments: [{ id: 'at1', filename: 'permission.pdf', mimeType: 'application/pdf', size: 1234 }] },
-    ])
-    const req = new Request('http://x/api/inbox/digest', { method: 'POST', headers: { Authorization: 'Bearer t' } })
-    const res = await POST(req)
-    const body = await res.json()
-    expect(body.emails[0].fullBody).toContain('Zoo trip Thursday')
-    expect(body.emails[0].attachments).toHaveLength(1)
-    expect(body.emails[0].attachments[0].filename).toBe('permission.pdf')
-    expect(body.emails[0].accountEmail).toBe('mary@tribe.ai')
-  })
-})
-```
-
-Note: The test above assumes `fetchUnreadPrimary` will eventually return `attachments`. If it does not today, update `src/lib/server/gmail-fetcher.ts` to surface attachment metadata — see Task 10, Step 2a.
-
-- [ ] **Step 2a: If `fetchUnreadPrimary` does not return attachments, extend it**
-
-Read `src/lib/server/gmail-fetcher.ts`. If `GmailEmail` does not include `attachments`, extend it:
-
-```ts
-export interface GmailEmail {
-  id: string
-  subject: string
-  sender: string
-  snippet: string
-  fullBody: string
-  date: number
-  attachments: { id: string; filename: string; mimeType: string; size: number }[]
-}
-```
-
-And in the message-parsing loop, walk `payload.parts` recursively for any part with `body.attachmentId`:
-
-```ts
-interface GmailPayload {
-  mimeType?: string
-  filename?: string
-  body?: { data?: string; attachmentId?: string; size?: number }
-  parts?: GmailPayload[]
-}
-
-const extractAttachments = (payload: GmailPayload): { id: string; filename: string; mimeType: string; size: number }[] => {
-  if (!payload) return []
-  const out: { id: string; filename: string; mimeType: string; size: number }[] = []
-  if (payload.body?.attachmentId && payload.filename) {
-    out.push({
-      id: payload.body.attachmentId,
-      filename: payload.filename,
-      mimeType: payload.mimeType ?? 'application/octet-stream',
-      size: payload.body.size ?? 0,
-    })
-  }
-  if (payload.parts) out.push(...payload.parts.flatMap(extractAttachments))
-  return out
-}
-```
-
-Include it in the returned object: `attachments: extractAttachments(msgData.payload)`.
-
-- [ ] **Step 2b: If you extended the fetcher, add a test**
-
-Append to `tests/server/gmail-fetcher.test.ts` (create if missing):
-
-```ts
-// If the file does not exist, create it with:
-// import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
-// (and a global fetch mock per the pattern in other server tests)
-```
-
-If creating from scratch:
+Create or extend `tests/server/gmail-fetcher.test.ts`:
 
 ```ts
 import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
@@ -1562,41 +1153,446 @@ describe('fetchUnreadPrimary', () => {
 })
 ```
 
-- [ ] **Step 3: Run the failing route test**
+- [ ] **Step 3: Run test to verify it fails**
 
-Run: `npx jest tests/api/inbox-digest-v2.test.ts`
-Expected: FAIL — either `Cannot find module '@/lib/server/profiles'` (if mock not in place) or more likely schema mismatch because the old route still uses the Phase 1 schema.
+Run: `npx jest tests/server/gmail-fetcher.test.ts`
+Expected: FAIL — either `out[0].attachments` is undefined or the shape is wrong.
 
-- [ ] **Step 4: Rewrite the route**
+- [ ] **Step 4: Implement**
 
-Replace `src/app/api/inbox/digest/route.ts` entirely with:
+In `src/lib/server/gmail-fetcher.ts`:
+
+1. Extend the returned type:
 
 ```ts
-import { NextResponse } from 'next/server'
+export interface GmailEmail {
+  id: string
+  subject: string
+  sender: string
+  snippet: string
+  fullBody: string
+  date: number
+  attachments: { id: string; filename: string; mimeType: string; size: number }[]
+}
+```
+
+2. Add a recursive attachment extractor above the main parse loop:
+
+```ts
+interface GmailPayload {
+  mimeType?: string
+  filename?: string
+  body?: { data?: string; attachmentId?: string; size?: number }
+  parts?: GmailPayload[]
+}
+
+const extractAttachments = (
+  payload: GmailPayload | undefined
+): { id: string; filename: string; mimeType: string; size: number }[] => {
+  if (!payload) return []
+  const out: { id: string; filename: string; mimeType: string; size: number }[] = []
+  if (payload.body?.attachmentId && payload.filename) {
+    out.push({
+      id: payload.body.attachmentId,
+      filename: payload.filename,
+      mimeType: payload.mimeType ?? 'application/octet-stream',
+      size: payload.body.size ?? 0,
+    })
+  }
+  if (payload.parts) out.push(...payload.parts.flatMap(extractAttachments))
+  return out
+}
+```
+
+3. In the per-message return, include `attachments: extractAttachments(msgData.payload)`.
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run: `npx jest tests/server/gmail-fetcher.test.ts`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/lib/server/gmail-fetcher.ts tests/server/gmail-fetcher.test.ts
+git commit -m "feat(gmail-fetcher): surface attachment metadata for Phase 2"
+```
+
+If attachments were already surfaced, commit message: `chore(gmail-fetcher): confirm attachment metadata surfaces (no-op change)` and skip the file adds.
+
+---
+
+### Task 9: `profilesRouter` — tRPC `list`, `upsert`, `learnDomain` procedures
+
+Replace the former `/api/profiles` + `/api/profiles/learn-domain` Route Handlers with a single tRPC router mounted at `appRouter.profiles`. Authorization is provided by `protectedProcedure` (sets `ctx.uid`).
+
+**Files:**
+- Create: `src/server/trpc/routers/profiles.ts`
+- Create: `tests/server/trpc/routers/profiles.test.ts`
+- Modify: `src/server/trpc/root.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/server/trpc/routers/profiles.test.ts`:
+
+```ts
+import { profilesRouter } from '@/server/trpc/routers/profiles'
+import {
+  seedProfilesIfEmpty,
+  upsertProfile,
+  listProfiles,
+  appendKnownDomain,
+} from '@/lib/server/profiles'
+import { TRPCError } from '@trpc/server'
+
+jest.mock('@/lib/server/profiles')
+
+describe('profiles router', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('list seeds + returns profiles for an authenticated caller', async () => {
+    ;(seedProfilesIfEmpty as jest.Mock).mockResolvedValue([
+      { id: 'mary', name: 'Mary', type: 'Adult', currentContext: '', preferences: [], routines: [], sizes: {}, medicalNotes: '' },
+    ])
+    const caller = profilesRouter.createCaller({ uid: 'mary-uid' })
+    const { profiles } = await caller.list()
+    expect(profiles).toHaveLength(1)
+    expect(profiles[0].name).toBe('Mary')
+    expect(seedProfilesIfEmpty).toHaveBeenCalledWith('mary-uid')
+  })
+
+  it('list rejects unauthenticated callers', async () => {
+    const caller = profilesRouter.createCaller({})
+    await expect(caller.list()).rejects.toBeInstanceOf(TRPCError)
+  })
+
+  it('upsert persists and returns the refreshed list', async () => {
+    ;(upsertProfile as jest.Mock).mockResolvedValue(undefined)
+    ;(listProfiles as jest.Mock).mockResolvedValue([
+      { id: 'ellie', name: 'Ellie', type: 'Child', currentContext: 'Test', preferences: [], routines: [], sizes: {}, medicalNotes: '' },
+    ])
+    const caller = profilesRouter.createCaller({ uid: 'mary-uid' })
+    const result = await caller.upsert({
+      id: 'ellie', name: 'Ellie', type: 'Child',
+      currentContext: 'Test', preferences: [], routines: [], sizes: {}, medicalNotes: '',
+    })
+    expect(upsertProfile).toHaveBeenCalledWith('mary-uid', expect.objectContaining({ id: 'ellie' }))
+    expect(result.profiles).toHaveLength(1)
+  })
+
+  it('upsert rejects payloads without a valid id', async () => {
+    const caller = profilesRouter.createCaller({ uid: 'mary-uid' })
+    await expect(
+      caller.upsert({
+        id: '', name: 'bad', type: 'Child',
+        currentContext: '', preferences: [], routines: [], sizes: {}, medicalNotes: '',
+      })
+    ).rejects.toBeInstanceOf(TRPCError)
+  })
+
+  it('learnDomain appends a new domain', async () => {
+    ;(appendKnownDomain as jest.Mock).mockResolvedValue(undefined)
+    const caller = profilesRouter.createCaller({ uid: 'mary-uid' })
+    const result = await caller.learnDomain({ profileId: 'annie', domain: 'art.audaucy.org' })
+    expect(appendKnownDomain).toHaveBeenCalledWith('mary-uid', 'annie', 'art.audaucy.org')
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('learnDomain rejects a bare domain with protocol', async () => {
+    const caller = profilesRouter.createCaller({ uid: 'mary-uid' })
+    await expect(
+      caller.learnDomain({ profileId: 'annie', domain: 'https://audaucy.org' })
+    ).rejects.toBeInstanceOf(TRPCError)
+  })
+
+  it('learnDomain rejects missing profileId', async () => {
+    const caller = profilesRouter.createCaller({ uid: 'mary-uid' })
+    await expect(
+      caller.learnDomain({ profileId: '', domain: 'audaucy.org' })
+    ).rejects.toBeInstanceOf(TRPCError)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest tests/server/trpc/routers/profiles.test.ts`
+Expected: FAIL — `Cannot find module '@/server/trpc/routers/profiles'`.
+
+- [ ] **Step 3: Implement the router**
+
+Create `src/server/trpc/routers/profiles.ts`:
+
+```ts
+import { z } from 'zod'
+import { router, protectedProcedure } from '../index'
+import {
+  listProfiles,
+  upsertProfile,
+  seedProfilesIfEmpty,
+  appendKnownDomain,
+} from '@/lib/server/profiles'
+
+const ProfileSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  type: z.enum(['Adult', 'Child', 'Pet']),
+  currentContext: z.string(),
+  preferences: z.array(z.string()),
+  routines: z.array(z.string()),
+  sizes: z.record(z.string(), z.string()),
+  medicalNotes: z.string(),
+  knownDomains: z.array(z.string()).optional(),
+  knownSenders: z.array(z.string()).optional(),
+})
+
+const DomainRe = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i
+
+const LearnDomainInput = z.object({
+  profileId: z.string().min(1),
+  domain: z.string().regex(DomainRe, 'Expect a bare domain like "example.com"'),
+})
+
+export const profilesRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const profiles = await seedProfilesIfEmpty(ctx.uid)
+    return { profiles }
+  }),
+
+  upsert: protectedProcedure
+    .input(ProfileSchema)
+    .mutation(async ({ ctx, input }) => {
+      await upsertProfile(ctx.uid, input)
+      const profiles = await listProfiles(ctx.uid)
+      return { profiles }
+    }),
+
+  learnDomain: protectedProcedure
+    .input(LearnDomainInput)
+    .mutation(async ({ ctx, input }) => {
+      await appendKnownDomain(ctx.uid, input.profileId, input.domain.toLowerCase())
+      return { ok: true as const }
+    }),
+})
+```
+
+- [ ] **Step 4: Mount on `appRouter`**
+
+Edit `src/server/trpc/root.ts`. Add the import and register the router alongside the existing ones:
+
+```ts
+import { profilesRouter } from './routers/profiles'
+
+export const appRouter = router({
+  // ... existing routers (accounts, auth, calendar, calendars, gmail, tasks, inbox) ...
+  profiles: profilesRouter,
+})
+
+export type AppRouter = typeof appRouter
+```
+
+Preserve the alphabetical/logical ordering already established by the architecture migration — the only change is inserting `profiles`.
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run: `npx jest tests/server/trpc/routers/profiles.test.ts`
+Expected: PASS (7 tests).
+
+- [ ] **Step 6: Confirm full type-check**
+
+Run: `npx tsc --noEmit`
+Expected: no new errors from the router itself. Any remaining errors are pre-existing (addressed in later tasks).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/server/trpc/routers/profiles.ts src/server/trpc/root.ts tests/server/trpc/routers/profiles.test.ts
+git commit -m "feat(trpc): profiles.list + profiles.upsert + profiles.learnDomain"
+```
+
+---
+
+### Task 10: Rewrite `inboxRouter.digest` with Phase 2 pipeline
+
+Rewrite the Phase-1-parity `digest` procedure created by the architecture migration. New behavior: fetch per-account → seed profiles → pre-resolve direct sender identities → build the ISO-local-time prompt → call LLM with `ClassifiedEmailsSchema` → merge → stamp `hubStatus: 'UNREAD'` + `status: 'PROPOSED'`.
+
+**Files:**
+- Modify: `src/server/trpc/routers/inbox.ts` (full rewrite of the procedure body + schema)
+- Modify: `tests/server/trpc/routers/inbox.test.ts` (rewrite to cover the new output shape)
+
+- [ ] **Step 1: Rewrite the router test**
+
+Replace the entire contents of `tests/server/trpc/routers/inbox.test.ts` with:
+
+```ts
+import { inboxRouter } from '@/server/trpc/routers/inbox'
+import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
+import { refreshAccessToken } from '@/lib/server/google-oauth'
+import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
+import { seedProfilesIfEmpty } from '@/lib/server/profiles'
+import * as aiModule from 'ai'
+
+jest.mock('@/lib/server/accounts')
+jest.mock('@/lib/server/google-oauth')
+jest.mock('@/lib/server/gmail-fetcher')
+jest.mock('@/lib/server/profiles')
+jest.mock('ai', () => ({ generateObject: jest.fn() }))
+jest.mock('@ai-sdk/openai', () => ({ openai: jest.fn() }))
+
+const baseRaw = {
+  id: 'm1',
+  subject: 'Zoo trip',
+  sender: 'Ms. Redd <office@blessedsacrament.org>',
+  snippet: 'Zoo Thursday',
+  fullBody: 'Zoo trip Thursday 8am. Peanut-free lunches please.',
+  date: 1_745_000_000_000,
+  attachments: [] as { id: string; filename: string; mimeType: string; size: number }[],
+}
+
+const baseClassified = {
+  id: 'm1',
+  classification: 'CALENDAR_EVENT',
+  snippet: 'Zoo trip with Ellie on Thursday.',
+  senderIdentity: { personId: 'ellie', confidence: 'high' },
+  suggestedActions: [
+    {
+      id: 'a1',
+      type: 'CALENDAR_EVENT',
+      title: 'Zoo trip',
+      date: 1_745_000_000_000,
+      time: '8:00 AM',
+      context: 'FAMILY',
+      sourceQuote: 'Zoo trip Thursday 8am.',
+      confidence: 'high',
+    },
+  ],
+}
+
+describe('inbox router (Phase 2)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    ;(listAccounts as jest.Mock).mockResolvedValue([{ id: 'a1', email: 'mary@tribe.ai' }])
+    ;(getDecryptedRefreshToken as jest.Mock).mockResolvedValue('rt')
+    ;(refreshAccessToken as jest.Mock).mockResolvedValue({ accessToken: 'at', expiresAt: 0 })
+    ;(fetchUnreadPrimary as jest.Mock).mockResolvedValue([baseRaw])
+    ;(seedProfilesIfEmpty as jest.Mock).mockResolvedValue([
+      {
+        id: 'ellie', name: 'Ellie', type: 'Child',
+        currentContext: '', preferences: [], routines: [], sizes: {},
+        medicalNotes: 'Peanut allergy',
+        knownDomains: ['blessedsacrament.org'],
+      },
+    ])
+    ;(aiModule.generateObject as jest.Mock).mockResolvedValue({ object: { emails: [baseClassified] } })
+  })
+
+  it('returns richer Email records with classification, senderIdentity, hubStatus, sourceQuote', async () => {
+    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    const { emails } = await caller.digest()
+    expect(emails).toHaveLength(1)
+    const e = emails[0]
+    expect(e.id).toBe('m1')
+    expect(e.classification).toBe('CALENDAR_EVENT')
+    expect(e.senderIdentity).toEqual({ personId: 'ellie', confidence: 'high' })
+    expect(e.hubStatus).toBe('UNREAD')
+    expect(e.suggestedActions[0].sourceQuote).toBe('Zoo trip Thursday 8am.')
+    expect(e.suggestedActions[0].status).toBe('PROPOSED')
+    expect(e.accountId).toBe('a1')
+    expect(e.accountEmail).toBe('mary@tribe.ai')
+  })
+
+  it('returns empty array when no accounts return emails (does not call the LLM)', async () => {
+    ;(fetchUnreadPrimary as jest.Mock).mockResolvedValue([])
+    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    const { emails } = await caller.digest()
+    expect(emails).toEqual([])
+    expect(aiModule.generateObject).not.toHaveBeenCalled()
+  })
+
+  it('pre-resolves sender identity from knownDomains and passes it to the prompt', async () => {
+    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    await caller.digest()
+    const options = (aiModule.generateObject as jest.Mock).mock.calls[0][0]
+    expect(options.prompt).toMatch(/"personId": "ellie"/)
+    expect(options.prompt).toMatch(/"confidence": "medium"/)
+  })
+
+  it('renders email send-time as ISO-local string in the prompt (no raw epoch ms)', async () => {
+    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    await caller.digest()
+    const options = (aiModule.generateObject as jest.Mock).mock.calls[0][0]
+    expect(options.prompt).toMatch(/2025-04-18T/)
+    expect(options.prompt).not.toContain('1745000000000')
+  })
+
+  it('stamps every email with hubStatus=UNREAD even if the LLM omits senderIdentity', async () => {
+    ;(aiModule.generateObject as jest.Mock).mockResolvedValue({
+      object: { emails: [{ ...baseClassified, senderIdentity: undefined }] },
+    })
+    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    const { emails } = await caller.digest()
+    expect(emails[0].hubStatus).toBe('UNREAD')
+    expect(emails[0].senderIdentity).toBeUndefined()
+  })
+
+  it('preserves fullBody / attachments / accountEmail from the raw fetch', async () => {
+    ;(fetchUnreadPrimary as jest.Mock).mockResolvedValue([
+      { ...baseRaw, attachments: [{ id: 'at1', filename: 'permission.pdf', mimeType: 'application/pdf', size: 1234 }] },
+    ])
+    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    const { emails } = await caller.digest()
+    expect(emails[0].fullBody).toContain('Zoo trip Thursday')
+    expect(emails[0].attachments).toHaveLength(1)
+    expect(emails[0].attachments[0].filename).toBe('permission.pdf')
+    expect(emails[0].accountEmail).toBe('mary@tribe.ai')
+  })
+
+  it('rejects unauthenticated callers', async () => {
+    const caller = inboxRouter.createCaller({})
+    await expect(caller.digest()).rejects.toThrow()
+  })
+})
+```
+
+- [ ] **Step 2: Run the failing test**
+
+Run: `npx jest tests/server/trpc/routers/inbox.test.ts`
+Expected: FAIL — the Phase-1-parity procedure returns the old schema (no `classification`, no `hubStatus`, no `senderIdentity`).
+
+- [ ] **Step 3: Rewrite the procedure**
+
+Replace `src/server/trpc/routers/inbox.ts` entirely with:
+
+```ts
 import { openai } from '@ai-sdk/openai'
 import { generateObject } from 'ai'
-import { getUidFromRequest, HttpError } from '@/lib/server/session'
+import { router, protectedProcedure } from '../index'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
 import { seedProfilesIfEmpty } from '@/lib/server/profiles'
 import { resolveDirectSenderIdentity } from '@/lib/server/sender-identity'
-import { buildDigestPrompt, PreResolvedIdentity } from '@/lib/server/digest-prompt'
+import {
+  buildDigestPrompt,
+  type PreResolvedIdentity,
+  type PromptRawEmail,
+} from '@/lib/server/digest-prompt'
 import { ClassifiedEmailsSchema } from '@/lib/server/classification-schema'
 
-export const maxDuration = 60
+const DEFAULT_TIMEZONE = process.env.HUB_DEFAULT_TIMEZONE ?? 'America/New_York'
 
-export async function POST(req: Request) {
-  try {
-    const uid = await getUidFromRequest(req)
+export const inboxRouter = router({
+  digest: protectedProcedure.query(async ({ ctx }) => {
     const [accounts, profiles] = await Promise.all([
-      listAccounts(uid),
-      seedProfilesIfEmpty(uid),
+      listAccounts(ctx.uid),
+      seedProfilesIfEmpty(ctx.uid),
     ])
 
     const perAccount = await Promise.all(accounts.map(async (acc) => {
       try {
-        const rt = await getDecryptedRefreshToken(uid, acc.id)
+        const rt = await getDecryptedRefreshToken(ctx.uid, acc.id)
         if (!rt) return []
         const { accessToken } = await refreshAccessToken(rt)
         const raw = await fetchUnreadPrimary(accessToken)
@@ -1606,14 +1602,31 @@ export async function POST(req: Request) {
       }
     }))
     const rawEmails = perAccount.flat()
-    if (rawEmails.length === 0) return NextResponse.json({ emails: [] })
+    if (rawEmails.length === 0) return { emails: [] }
 
     const preResolved: Record<string, PreResolvedIdentity | null> = {}
     for (const e of rawEmails) {
       preResolved[e.id] = resolveDirectSenderIdentity(e.sender, profiles)
     }
 
-    const prompt = buildDigestPrompt(rawEmails, profiles, preResolved)
+    const promptRawEmails: PromptRawEmail[] = rawEmails.map(e => ({
+      id: e.id,
+      subject: e.subject,
+      sender: e.sender,
+      snippet: e.snippet,
+      fullBody: e.fullBody,
+      date: e.date,
+      accountId: e.accountId,
+    }))
+
+    const prompt = buildDigestPrompt({
+      rawEmails: promptRawEmails,
+      profiles,
+      preResolved,
+      now: new Date(),
+      timeZone: DEFAULT_TIMEZONE,
+    })
+
     const { object } = await generateObject({
       model: openai('gpt-4o-mini'),
       schema: ClassifiedEmailsSchema,
@@ -1650,106 +1663,99 @@ export async function POST(req: Request) {
       }
     })
 
-    return NextResponse.json({ emails: digested })
-  } catch (e: unknown) {
-    const err = e as { status?: number; message?: string }
-    const status = e instanceof HttpError ? e.status : (err.status ?? 500)
-    return NextResponse.json({ error: err.message ?? 'Unknown error' }, { status })
-  }
-}
+    return { emails: digested }
+  }),
+})
 ```
 
-- [ ] **Step 5: Run tests**
+- [ ] **Step 4: Run tests**
 
-Run: `npx jest tests/api/inbox-digest-v2.test.ts`
-Expected: PASS (5 tests).
+Run: `npx jest tests/server/trpc/routers/inbox.test.ts`
+Expected: PASS (7 tests).
 
-Also run: `npx jest tests/server/gmail-fetcher.test.ts` if you created it.
+- [ ] **Step 5: Full type-check**
+
+Run: `npx tsc --noEmit`
+Expected: the router compiles. Remaining errors should now only be in `src/lib/store.tsx` (`CALENDAR_INVITE` / `TODO_ITEM` branches) and possibly `src/app/page.tsx` — fixed in Tasks 13–14.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/app/api/inbox/digest/route.ts tests/api/inbox-digest-v2.test.ts
-git rm tests/api/inbox-digest.test.ts 2>/dev/null || true
-# If you also touched the fetcher:
-git add src/lib/server/gmail-fetcher.ts tests/server/gmail-fetcher.test.ts 2>/dev/null || true
-git commit -m "feat(inbox): rewrite digest route with 6 classifications + sender identity"
+git add src/server/trpc/routers/inbox.ts tests/server/trpc/routers/inbox.test.ts
+git commit -m "feat(trpc): rewrite inbox.digest with 6 classifications + sender identity + ISO-local dates"
 ```
 
 ---
 
-### Task 11: Hydrate profiles in the client store
+### Task 11: Hydrate profiles in the client store via `trpc.profiles.list.useQuery()`
 
-Move `initialProfiles` out of `src/lib/store.tsx` and hydrate from `/api/profiles`. Add `appendKnownDomain` bound to the learning-loop endpoint. Fix the existing action-construction paths that referenced the old `CALENDAR_INVITE` / `TODO_ITEM` type names.
+Move `initialProfiles` out of `src/lib/store.tsx`. Replace the hardcoded array with a `trpc.profiles.list.useQuery()` hook that mirrors how `calendar`, `tasks`, `inbox` are wired by the architecture migration. Add an `appendKnownDomain` helper that calls `trpc.profiles.learnDomain.useMutation()` and invalidates `trpc.profiles.list`.
 
 **Files:**
-- Modify: `src/lib/store.tsx:91-101, 110-178, 219-245, 258`
+- Modify: `src/lib/store.tsx`
 
-- [ ] **Step 1: Remove `initialProfiles` constant**
+- [ ] **Step 1: Remove `initialProfiles`**
 
-In `src/lib/store.tsx`, delete lines 95–101 (the `initialProfiles` array). Keep `initialGroceries`.
+In `src/lib/store.tsx`, delete the `initialProfiles` constant (the 5-entry array currently defined near the top of the module). Keep `initialGroceries`.
 
-- [ ] **Step 2: Replace `useState<EntityProfile[]>(initialProfiles)`**
+- [ ] **Step 2: Import tRPC utilities**
 
-Find line:
+At the top of `src/lib/store.tsx`, add:
+
+```ts
+import { trpc } from "@/lib/trpc/client"
+```
+
+If there are already tRPC imports from the architecture migration, group them — do not duplicate.
+
+- [ ] **Step 3: Replace `useState<EntityProfile[]>(initialProfiles)`**
+
+Locate:
 
 ```tsx
 const [profiles, setProfiles] = useState<EntityProfile[]>(initialProfiles)
 ```
 
-Replace with:
+Delete the line entirely. Below the other `trpc.*.useQuery()` hooks introduced by the architecture migration (calendar, tasks, inbox), add:
 
 ```tsx
-const [profiles, setProfiles] = useState<EntityProfile[]>([])
+const { data: profilesData, error: profilesError } = trpc.profiles.list.useQuery(undefined, {
+  enabled: !!user,
+})
+
+useEffect(() => {
+  if (profilesError) toast("SYNC ERROR", { description: "Profiles: " + profilesError.message })
+}, [profilesError])
+
+const profiles: EntityProfile[] = useMemo(
+  () => profilesData?.profiles ?? [],
+  [profilesData]
+)
 ```
 
-- [ ] **Step 3: Add profile hydration to the existing hydrate effect**
+If `useMemo` and `useEffect` are not already imported in the file, add them to the existing `import React, { ... } from "react"` line.
 
-Inside the `useEffect` that already calls `hydrateCalendar`, `hydrateTasks`, `hydrateEmails`, add:
+- [ ] **Step 4: Replace the profile-setter with a mutation + invalidation**
 
-```tsx
-const hydrateProfiles = async () => {
-  const data = await hydrate('/api/profiles')
-  if (!data) return
-  if (data.error) {
-    toast("SYNC ERROR", { description: "Profiles: " + data.error })
-    return
-  }
-  if (data.profiles) setProfiles(data.profiles)
-}
-```
-
-And call `hydrateProfiles()` alongside the others.
-
-- [ ] **Step 4: Add `appendKnownDomain` to the store**
-
-Inside `HubProvider`, near the other setters, add:
+Inside `HubProvider`, add:
 
 ```tsx
+const utils = trpc.useUtils()
+const learnDomainMutation = trpc.profiles.learnDomain.useMutation({
+  onSuccess: () => utils.profiles.list.invalidate(),
+  onError: (e) => toast("ERROR", { description: e.message }),
+})
+
 const appendKnownDomain = async (profileId: string, domain: string) => {
-  const token = await getIdToken()
-  if (!token) return
-  const res = await fetch('/api/profiles/learn-domain', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profileId, domain }),
-  })
-  if (!res.ok) {
-    toast("ERROR", { description: "Could not save domain." })
-    return
-  }
-  setProfiles(prev => prev.map(p => {
-    if (p.id !== profileId) return p
-    const next = new Set(p.knownDomains ?? [])
-    next.add(domain.toLowerCase())
-    return { ...p, knownDomains: Array.from(next) }
-  }))
+  await learnDomainMutation.mutateAsync({ profileId, domain })
 }
 ```
 
-- [ ] **Step 5: Fix the old action-type branches**
+Remove any `setProfiles` calls elsewhere in the file — profiles are now read-only from the query cache. If a write path exists, it goes through a mutation + `utils.profiles.list.invalidate()` (Phase 2 only needs `learnDomain`; `upsert` is surfaced for Phase 3+ but not exposed on the store yet).
 
-In the existing `actOnEmailAction`, replace:
+- [ ] **Step 5: Fix the old action-type branches in `actOnEmailAction`**
+
+Inside the existing `actOnEmailAction`, replace:
 
 ```tsx
 if (act.type === 'CALENDAR_INVITE') {
@@ -1770,7 +1776,7 @@ if (act.type === 'CALENDAR_EVENT') {
 // NEEDS_REPLY is handled in Phase 6.
 ```
 
-Also update the `"APPROVED"` status literal in the same function to `"COMMITTED"`:
+Also update the status literal in the same function from `"APPROVED"` to `"COMMITTED"`:
 
 ```tsx
 if (a.id === actionId) {
@@ -1779,7 +1785,7 @@ if (a.id === actionId) {
 }
 ```
 
-And in `dismissEmailAction`, the `"DISMISSED"` literal is already correct; no change.
+In `dismissEmailAction`, the `"DISMISSED"` literal is already correct; no change needed.
 
 - [ ] **Step 6: Expose `appendKnownDomain` on the context**
 
@@ -1789,34 +1795,29 @@ Update the `HubState` interface to include:
 appendKnownDomain: (profileId: string, domain: string) => Promise<void>
 ```
 
-Update the `<HubContext.Provider value={{ ... }}>` to include `appendKnownDomain`.
+Update the `<HubContext.Provider value={{ ... }}>` to include `appendKnownDomain` in its value object.
 
 - [ ] **Step 7: Run the type-checker**
 
 Run: `npx tsc --noEmit`
-Expected: zero errors. If errors remain, they're likely in `src/app/page.tsx` (Bouncer home widget) or elsewhere — trace and fix minimally.
+Expected: zero errors in `src/lib/store.tsx`. Remaining errors should only be in `src/app/page.tsx` (Bouncer widget) — addressed in Task 14.
 
-- [ ] **Step 8: Run the full test suite**
-
-Run: `npx jest`
-Expected: all tests pass.
-
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/lib/store.tsx
-git commit -m "feat(store): hydrate profiles from Firestore; add appendKnownDomain"
+git commit -m "feat(store): hydrate profiles via trpc.profiles.list; add appendKnownDomain mutation wrapper"
 ```
 
 ---
 
-### Task 12: Learn-domain UI banner
+### Task 12: Learn-domain UI banner (tRPC-backed)
 
-Show an inline "Remember this domain?" banner on the selected email when the LLM produced a `senderIdentity` whose `confidence` is `medium` and whose domain is not yet in the matched profile's `knownDomains`. Accepting POSTs to `/api/profiles/learn-domain`; declining stores a localStorage entry so we don't ask again for that domain.
+Show an inline "Remember this domain?" banner on the selected email when the LLM produced a `senderIdentity` whose `confidence` is `medium` and whose domain is not yet in the matched profile's `knownDomains`. Accepting calls `appendKnownDomain(profileId, domain)` (which fires the tRPC mutation + invalidates the profiles query). Declining stores a localStorage entry so the banner stays dismissed for that domain across sessions.
 
 **Files:**
 - Create: `src/components/inbox/learn-domain-banner.tsx`
-- Modify: `src/app/inbox/page.tsx` (mount the banner in the reader pane)
+- Modify: `src/app/inbox/page.tsx`
 
 - [ ] **Step 1: Implement the banner component**
 
@@ -1905,48 +1906,55 @@ export function LearnDomainBanner({ email }: { email: Email }) {
 
 - [ ] **Step 2: Mount the banner in the inbox page**
 
-In `src/app/inbox/page.tsx`, add the import near the top:
+In `src/app/inbox/page.tsx`, add near the existing imports:
 
 ```tsx
 import { LearnDomainBanner } from "@/components/inbox/learn-domain-banner"
 ```
 
-Inside the reader pane, just below the header block (around line 81, before the `<div className="p-8 lg:p-12 font-serif ...">` body block), add:
+Inside the reader pane, directly below the header block (above the `<div>` that renders the email body), add:
 
 ```tsx
 {activeEmail && <div className="px-8 lg:px-12 pt-4"><LearnDomainBanner email={activeEmail} /></div>}
 ```
 
-- [ ] **Step 3: Manual smoke**
+If the variable name in this file is `selectedEmail` or `openEmail` rather than `activeEmail`, use the local name — the component takes a prop named `email`.
 
-Run: `npm run dev`
-- Open `/inbox`.
-- Pick an email whose sender domain is NOT in any profile's `knownDomains` and whose LLM output produced `senderIdentity.confidence === 'medium'` with a `personId`.
+- [ ] **Step 3: Type-check**
+
+Run: `npx tsc --noEmit`
+Expected: no errors from the new component or its call site.
+
+- [ ] **Step 4: Manual smoke**
+
+Run: `npm run dev`. Log in with at least one Gmail account. Walk through:
+
+- Open `/inbox`. Pick an email whose sender domain is NOT in any profile's `knownDomains` and whose LLM output produced `senderIdentity.confidence === 'medium'` with a `personId`. (You may need to `console.log(useHub().emails)` briefly to find one.)
 - Expected: banner appears with the domain and profile name.
-- Click "Remember" → banner disappears; refresh the page; banner stays gone for the same domain; the learned domain is in the profile (verify with `curl` to `/api/profiles` or check Firestore).
-- On a new email from the same domain, the LLM should now produce `confidence: 'high'` (no banner).
-- On another new-domain email, click "Not this one" → banner disappears; reload; does not reappear for that domain.
+- Click **Remember** → banner disappears; refresh; banner stays gone for the same domain; confirm the domain is now in the profile's `knownDomains` by inspecting the cached tRPC query (React Query devtools) or hitting the procedure directly.
+- On a new email from the same domain, the LLM should now receive `confidence: 'high'` in the pre-resolved map (no banner).
+- On another new-domain email, click **Not this one** → banner disappears; reload; does not reappear for that domain.
 
-Document the manual result in the PR description.
+Record the results in the commit body.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/components/inbox/learn-domain-banner.tsx src/app/inbox/page.tsx
-git commit -m "feat(inbox): learn-domain banner"
+git commit -m "feat(inbox): learn-domain banner wired to profiles.learnDomain mutation"
 ```
 
 ---
 
-### Task 13: Classification fixtures + snapshot coverage
+### Task 13: Classification fixtures + schema coverage
 
-Capture one sample email per classification, run them through the schema, and save as fixtures useable by Phase 3+ tests.
+Capture one sample email per classification, run them through the shared schema, and save as reusable fixtures for Phase 3+ tests.
 
 **Files:**
 - Create: `tests/fixtures/emails-by-classification.ts`
 - Create: `tests/fixtures/emails-by-classification.test.ts`
 
-- [ ] **Step 1: Write the fixture + test**
+- [ ] **Step 1: Write the fixture**
 
 Create `tests/fixtures/emails-by-classification.ts`:
 
@@ -2035,6 +2043,8 @@ export function parseFixture() {
 }
 ```
 
+- [ ] **Step 2: Write the fixture test**
+
 Create `tests/fixtures/emails-by-classification.test.ts`:
 
 ```ts
@@ -2063,12 +2073,12 @@ describe('classification fixtures', () => {
 })
 ```
 
-- [ ] **Step 2: Run**
+- [ ] **Step 3: Run**
 
 Run: `npx jest tests/fixtures/emails-by-classification.test.ts`
 Expected: PASS (3 tests).
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add tests/fixtures/emails-by-classification.ts tests/fixtures/emails-by-classification.test.ts
@@ -2077,9 +2087,26 @@ git commit -m "test(inbox): fixture covering all 6 classifications"
 
 ---
 
-### Task 14: Full suite + type + lint sweep
+### Task 14: Home Bouncer widget + full tsc/jest/lint sweep
 
-- [ ] **Step 1: Run everything**
+Reconcile any remaining references to the old `Email` / `EmailAction` shape in `src/app/page.tsx` (the home Bouncer widget) using the compatibility shim. Then sweep the full suite.
+
+**Files:**
+- Modify (minimally, if needed): `src/app/page.tsx`
+
+- [ ] **Step 1: Run the full type-check and identify remaining errors**
+
+Run: `npx tsc --noEmit`
+
+If errors surface in `src/app/page.tsx`, they will fall into three buckets:
+
+1. **Old action-type literals** — `CALENDAR_INVITE` / `TODO_ITEM`. Replace with `CALENDAR_EVENT` / `TODO`.
+2. **Old status literals** — `action.status === 'PENDING'`. Replace with `isActionable(action.status)` and add `import { isActionable, toLegacyStatus } from '@/lib/action-compat'` to the top of the file.
+3. **Missing `classification` / `hubStatus`** — if the Bouncer widget constructs `Email` objects locally or assumes field presence, it won't anymore. The minimal fix: the widget should read `emails` from `useHub()` rather than constructing them, and it should treat `classification` as display-only (badge string). If the code does `email.classification.toLowerCase()` or similar, that's fine; if it compares to old literals, update.
+
+Apply only the minimum fixes needed. Phase 7 redesigns the home widget.
+
+- [ ] **Step 2: Run the full suite**
 
 ```bash
 npx tsc --noEmit
@@ -2087,62 +2114,82 @@ npx jest
 npm run lint
 ```
 
-Expected: zero errors in each.
+Expected: zero errors across all three.
 
-- [ ] **Step 2: Fix any regressions**
+- [ ] **Step 3: Fix any remaining regressions**
 
-If `tsc` surfaces anything in `src/app/page.tsx` (home Bouncer widget), the fix is almost certainly one of:
-- A reference to `CALENDAR_INVITE` / `TODO_ITEM` (replace with `CALENDAR_EVENT` / `TODO`)
-- A reference to `action.status === 'PENDING'` (replace with `isActionable(action.status)` — import the shim)
-- A reference to the old `Email` type shape (missing `classification` or `hubStatus` — add defaults in-place if necessary, or thread the data through from the store)
+Document each fix briefly in the commit message. If a fix requires more than a dozen lines in `page.tsx`, stop and note it as a defect — the Phase 2 surface should not require deep home-widget changes.
 
-Make only the minimum changes needed. Phase 7 redesigns the home widget.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add -A
-git commit -m "chore: quiet tsc/eslint across Phase 2 surface"
+git add src/app/page.tsx
+git commit -m "chore: route home Bouncer widget through action-compat shim"
 ```
+
+If there were no changes required, skip this commit — move on.
 
 ---
 
-### Task 15: End-to-end smoke checklist + docs
+### Task 15: End-to-end smoke + handoff
 
-Before declaring Phase 2 done, confirm the full pipeline works against real data.
+Before declaring Phase 2 done, confirm the full pipeline works against real data and update the plan index.
 
 - [ ] **Step 1: Run the dev server**
 
 Run: `npm run dev`
 
-- [ ] **Step 2: Manual smoke**
+- [ ] **Step 2: Manual smoke checklist**
 
-Sign in with at least two linked Gmail accounts (from Phase 1). On the home page (Bouncer) and `/inbox`, verify:
+Sign in with at least two linked Gmail accounts (from Phase 1). On the home page (Bouncer widget) and `/inbox`, verify:
 
 - [ ] Emails render with a subject, sender, and snippet.
+- [ ] Network tab shows a single `/api/trpc/...` batch call to `inbox.digest` + `profiles.list` (+ the usual `calendar.list`, `tasks.list`, `accounts.list`) — no legacy `/api/inbox/digest`, `/api/profiles`, or `/api/profiles/learn-domain` calls.
 - [ ] At least one email shows a `senderIdentity` that maps to a Life Graph profile (console-log `useHub().emails` to inspect if the UI doesn't surface it yet — Phase 3 adds chips).
 - [ ] Classifications divide roughly as expected across a sample of 10 unread emails: at least one `NEWSLETTER`, one `FYI`, one with an action.
 - [ ] Actions carry `sourceQuote` and `confidence` (console-log to verify).
-- [ ] Learn-domain banner appears for a medium-confidence sender with an unknown domain; clicking "Remember" persists to Firestore (confirm via `curl -s -H "Authorization: Bearer $(get-id-token)" http://localhost:3000/api/profiles | jq '.profiles[] | select(.id=="ellie") | .knownDomains'`).
-- [ ] `/settings` still works (Phase 1 accounts section unaffected).
-- [ ] Calendar and Tasks hydration still work (Phase 1 routes unaffected).
+- [ ] Learn-domain banner appears for a medium-confidence sender with an unknown domain; clicking **Remember** persists via `trpc.profiles.learnDomain.mutate(...)` and `trpc.profiles.list` auto-refetches; the learned domain is visible in the new query cache.
+- [ ] A second email from the newly-learned domain comes back with `senderIdentity.confidence === 'high'` from the pre-resolver.
+- [ ] Wait one full hour idle; refresh. No 401 re-login prompt (Phase 1 refresh-token plumbing still handling renewal).
+- [ ] `/settings` accounts + calendars sections still work (architecture migration unaffected).
+- [ ] Calendar + Tasks home widgets still hydrate (`trpc.calendar.list`, `trpc.tasks.list` unaffected).
 
-Record results in the PR description.
+Record each ✅/❌ in the final commit message.
 
-- [ ] **Step 3: Update `docs/superpowers/plans/2026-04-17-inbox-phase-1-auth-multi-account.md`**
+- [ ] **Step 3: Update the Phase 1 plan's "What's Next" footer**
 
-Find the "What's Next (Phase 2+)" section at the end. Replace the Phase 2 stub with:
+In `docs/superpowers/plans/2026-04-17-inbox-phase-1-auth-multi-account.md`, find the "What's Next (Phase 2+)" section. Replace the Phase 2 bullet with:
 
 ```
-- **Phase 2:** ✅ Shipped. AI extraction (6 classifications, 3 action types), sender identity matching, Life Graph learning loop. Plan: `docs/superpowers/plans/2026-04-21-inbox-phase-2-ai-extraction.md`.
+- **Phase 2:** Shipped. AI extraction (6 classifications, 3 action types), sender identity matching with email-addresses + date-fns-tz ISO-local prompts, Life Graph learning loop via profilesRouter. Plan: docs/superpowers/plans/2026-04-21-inbox-phase-2-ai-extraction.md.
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Commit the verification note + docs update**
 
 ```bash
 git add docs/superpowers/plans/2026-04-17-inbox-phase-1-auth-multi-account.md
 git commit -m "docs: mark Phase 2 shipped in Phase 1 plan footer"
+
+git commit --allow-empty -m "chore: Phase 2 verified end-to-end
+
+Suite: 0 tsc errors, all jest tests passing, zero lint errors.
+Manual smoke (recorded above)."
 ```
+
+- [ ] **Step 5: Open the PR**
+
+Open a PR from `feature/inbox-phase-2` into `main`. Title:
+
+> Phase 2: AI extraction with 6 classifications, sender identity, Life Graph learning loop
+
+Body summary:
+- Rewrote `inboxRouter.digest` with `ClassifiedEmailsSchema` (6 classifications, 3 action types, `sourceQuote`, `confidence`).
+- New `profilesRouter` with `list`, `upsert`, `learnDomain` procedures.
+- Sender identity pre-resolver (direct) + LLM inferred matching (in prompt).
+- ISO-local-time date rendering in prompts via `date-fns-tz` (DST-safe).
+- From-header parsing via `email-addresses` (replaces hand-rolled regex).
+- Learn-domain banner in existing UI; Phase 3 will redesign.
+- Action-compat shim keeps the existing `/inbox` and home Bouncer rendering through Phase 2; Phase 3 deletes it.
 
 ---
 
@@ -2150,18 +2197,22 @@ git commit -m "docs: mark Phase 2 shipped in Phase 1 plan footer"
 
 Before handing off:
 
-1. `npx jest` — entire suite green.
-2. `npx tsc --noEmit` — zero errors.
+1. `npx tsc --noEmit` — zero errors.
+2. `npx jest` — entire suite green (new tests: profiles CRUD, sender-identity, classification schema, digest prompt, profiles router, inbox router v2, action-compat, gmail-fetcher attachments, classification fixtures).
 3. `npm run lint` — zero errors.
-4. Smoke checklist from Task 15 passes.
-5. New Firestore `users/{uid}/profiles/{profileId}` collection contains seeded records for test users (verify in Firebase console).
+4. Smoke checklist from Task 15 Step 2 — every item ✅.
+5. Network tab on a logged-in session: no calls to `/api/profiles/*`, `/api/inbox/digest/route.ts`, or any other legacy Route Handler (only `/api/trpc/[trpc]` + `/api/auth/google/callback` + `/api/chat`).
+6. New Firestore `users/{uid}/profiles/{profileId}` collection contains seeded records for test users (verify in Firebase console).
+7. `src/lib/action-compat.ts` still exists (Phase 3 deletes it).
 
 If any of the above fail, fix and retest before declaring Phase 2 complete.
 
+---
+
 ## What's Next (Phase 3+)
 
-- **Phase 3:** UI redesign — three-pane `/inbox`, editable action cards (PROPOSED/EDITING only — no writes yet), Clear + Recently cleared, row treatments per classification. Plan: `docs/superpowers/plans/2026-04-21-inbox-phase-3-ui-redesign.md`.
-- **Phase 4:** Google write flow — real Calendar / Tasks commits with idempotency + double-click protection + duplicate detection + Gmail mark-as-read on Clear.
-- **Phase 5:** PDF extraction with Life Graph pre-fill.
-- **Phase 6:** Reply capability (`gmail.send`).
-- **Phase 7:** Home widget redesign.
+- **Phase 3:** UI redesign — three-pane `/inbox`, editable action cards (PROPOSED/EDITING only — no writes yet), Clear + Recently cleared, row treatments per classification. Drops `src/lib/action-compat.ts`. Introduces `trpc.inbox.markCleared.useMutation()` with optimistic cache updates. Plan: `docs/superpowers/plans/2026-04-21-inbox-phase-3-ui-redesign.md`.
+- **Phase 4:** Google write flow — new `actionsRouter` with `commitCalendar`, `commitTask`, `markEmailRead`; optimistic mutations with rollback on error; idempotency keys; double-click protection; duplicate detection.
+- **Phase 5:** PDF extraction with Life Graph pre-fill — new `attachmentsRouter.extract` procedure with lazy-on-open + Firestore cache.
+- **Phase 6:** Reply capability (`gmail.send`) — `inboxRouter.sendReply` mutation.
+- **Phase 7:** Home widget redesign — subscribes to the same `trpc.inbox.digest` query as `/inbox`.
