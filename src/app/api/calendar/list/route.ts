@@ -25,12 +25,13 @@ export async function POST(req: Request) {
     const errors = results.flatMap(r => (!Array.isArray(r) && '_error' in r ? [r._error] : []))
     const seen = new Set<string>()
     const events = allEvents.filter(e => {
-      const id = (e as { id?: string }).id
-      if (!id || seen.has(id)) return false
-      seen.add(id)
+      const ev = e as { id?: string; iCalUID?: string }
+      const dedupeKey = ev.iCalUID || ev.id
+      if (!dedupeKey || seen.has(dedupeKey)) return false
+      seen.add(dedupeKey)
       return true
     })
-    console.log(`[calendar/list] uid=${uid} accounts=${accounts.length} events=${events.length} (${allEvents.length - events.length} dupes) errors=${errors.length}`, errors)
+    console.log(`[calendar/list] uid=${uid} accounts=${accounts.length} events=${events.length} (${allEvents.length - events.length} dupes collapsed via iCalUID) errors=${errors.length}`, errors)
     return NextResponse.json({ events, errors })
   } catch (e: unknown) {
     const err = e as { status?: number; message?: string }

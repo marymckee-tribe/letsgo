@@ -2,6 +2,7 @@
 
 interface CalendarEvent {
   id: string
+  iCalUID?: string
   summary?: string
   start?: { dateTime?: string; date?: string }
   end?: { dateTime?: string; date?: string }
@@ -39,6 +40,7 @@ export async function fetchCalendarEvents(accessToken: string): Promise<Record<s
       if (data.error) return []
       return (data.items || []).map((e: CalendarEvent) => ({
         id: e.id,
+        iCalUID: e.iCalUID,
         title: e.summary,
         start: e.start?.dateTime || e.start?.date,
         end: e.end?.dateTime || e.end?.date,
