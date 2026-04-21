@@ -14,6 +14,7 @@ export type CalendarEvent = {
   fromEmail?: boolean
   aiTravelBuffer?: string | null
   aiPrepSuggestion?: string | null
+  profileId?: string | null
 }
 
 export type Task = {
@@ -128,7 +129,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         toast("SYNC ERROR", { description: "Calendar: " + data.error })
         return
       }
-      if (data.events) setEvents(data.events.map((e: { id: string; title: string; start: string; location?: string }) => {
+      if (data.events) setEvents(data.events.map((e: { id: string; title: string; start: string; location?: string; profileId?: string | null }) => {
         const isAllDay = !e.start.includes('T')
         const startDate = new Date(e.start)
         const time = isAllDay
@@ -141,6 +142,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
           date: startDate.getDate(),
           location: e.location,
           fromEmail: false,
+          profileId: e.profileId ?? null,
         }
       }))
     }
