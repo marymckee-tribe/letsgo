@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add lazy, cached, server-side PDF extraction for email attachments with Life Graph cross-reference. When the user opens an email with a PDF, the server fetches the attachment bytes from Gmail, extracts text (fast path: `unpdf`; slow path: GPT-4o vision OCR for scans), runs a `gpt-4o-mini` pass against the user's Life Graph profiles to produce a structured summary (dates, money, required fields, `life_graph_hits`), caches the result in Firestore, and renders a rich attachment card + inline PDF.js preview + download. Password-protected PDFs are detected and surfaced with a lock icon.
+**Goal:** Add lazy, cached, server-side PDF extraction for email attachments with Life Graph cross-reference. When the user opens an email with a PDF, the server fetches the attachment bytes from Gmail, extracts text via `unpdf`, runs a `gpt-4o-mini` pass against the user's Life Graph profiles to produce a structured summary (dates, money, required fields, `life_graph_hits`), caches the result in Firestore, and renders a rich attachment card + inline PDF.js preview + download. Password-protected PDFs are detected and surfaced with a lock icon. When text extraction returns empty/trivial text (e.g., scanned image PDFs), the result is cached as `extracted: { skipped: true, reason: 'no_text_extractable' }` and the UI shows "Extraction unavailable — open the preview to read the PDF." — no fallback LLM call.
 
 **Architecture:** A new `attachmentsRouter` in the tRPC app router handles three procedures: `extract` (mutation — lazy, idempotent pipeline), `get` (query — returns cached extraction if present), `downloadUrl` (query — mints a short-lived signed bearer URL for the attachment bytes, used by both Preview and Download buttons). All Gmail attachment fetching, PDF parsing, and LLM calls happen server-side. Cache key is `${messageId}:${attachmentId}` in `users/{uid}/attachments/{cacheKey}` Firestore docs — never invalidated (Gmail attachment content is immutable). The inline PDF viewer uses `pdfjs-dist` rendered in a slide-over. The Reader pane's attachment card is a new client component that composes `trpc.attachments.get.useQuery()` (fire-and-forget lazy) → `trpc.attachments.extract.useMutation()` on first open.
 
-**Tech Stack:** Next.js 16 (App Router), tRPC v11, `@tanstack/react-query` v5, `unpdf` (serverless-friendly PDF text extractor from the Nuxt team — drop-in replacement for `pdf-parse`), `pdfjs-dist` (inline PDF.js viewer), `@ai-sdk/openai` + `ai` (`generateObject` for structured extraction, `generateText` with vision for OCR fallback), `zod` 4, `firebase-admin` (Firestore + signed-URL-style bearer tokens), Jest + ts-jest + `@testing-library/react`.
+**Tech Stack:** Next.js 16 (App Router), tRPC v11, `@tanstack/react-query` v5, `unpdf` (serverless-friendly PDF text extractor from the Nuxt team — drop-in replacement for `pdf-parse`), `pdfjs-dist` (inline PDF.js viewer), `@ai-sdk/openai` + `ai` (`generateObject` for structured extraction), `zod` 4, `firebase-admin` (Firestore + signed-URL-style bearer tokens), Jest + ts-jest + `@testing-library/react`.
 
 **Spec reference:** `docs/superpowers/specs/2026-04-17-inbox-redesign-design.md` — specifically the "PDF Extraction" section (Pipeline, UX, Pre-fill).
 
@@ -37,7 +37,7 @@ Nothing for the human to do. All prerequisites from Phase 1 (env vars, Firebase 
 
 - [ ] **P1. Phase 4 (or the tRPC baseline + Phase 2 types) is merged.** Run `git log --oneline -20` — confirm `feature/inbox-phase-4` merge commit is in history, or that the tRPC baseline (`2026-04-21-architecture-trpc-react-query.md`) and Phase 2 are both merged.
 - [ ] **P2. Full suite is green.** Run `npx tsc --noEmit && npx jest && npm run lint`. All must pass before starting.
-- [ ] **P3. `drive.file` scope is active.** Open `src/lib/server/google-oauth.ts` and confirm the `SCOPES` array still includes `'https://www.googleapis.com/auth/drive.file'`. If **any Phase 4 work removed it**, flag Mary — the "Save to Drive" button in Task 14 depends on it. As of the Phase 1 ship, the scope is present; no re-consent is required for Phase 5.
+- [ ] **P3. `drive.file` scope is active.** Open `src/lib/server/google-oauth.ts` and confirm the `SCOPES` array still includes `'https://www.googleapis.com/auth/drive.file'`. As of the Phase 1 ship, the scope is present; no re-consent is required for Phase 5. (Phase 5 does not itself call the Drive API; the scope stays for future features.)
 - [ ] **P4. Create the working branch.** Run `git checkout -b feature/inbox-phase-5-pdf`.
 
 ---
@@ -47,20 +47,18 @@ Nothing for the human to do. All prerequisites from Phase 1 (env vars, Firebase 
 ### New files
 - `src/lib/server/gmail-attachments.ts` — `fetchAttachmentBytes(accessToken, messageId, attachmentId)` → `Buffer` (base64-decoded).
 - `src/lib/server/pdf-extract.ts` — `extractPdfText(buffer, { maxPages })` → `{ text, totalPages, passwordProtected }` via `unpdf`.
-- `src/lib/server/pdf-ocr.ts` — `ocrPdfWithVision(buffer, { maxPages })` → `string` via GPT-4o vision (sends page images as data URLs).
 - `src/lib/server/attachment-extract-schema.ts` — Zod schema + TypeScript types for the `extracted` shape on `Attachment`.
 - `src/lib/server/attachment-llm.ts` — builds the `gpt-4o-mini` prompt with `profiles` + `extractedText` and returns the structured `extracted` object via `generateObject`.
 - `src/lib/server/attachment-cache.ts` — Firestore CRUD: `getCachedExtraction(uid, cacheKey)`, `writeCachedExtraction(uid, cacheKey, extracted)`.
 - `src/lib/server/attachment-download-token.ts` — mints and verifies short-lived HMAC-signed bearer tokens for the download route (no Google Drive involvement; this is just a signed fetch of Gmail attachment bytes via our server).
 - `src/server/trpc/routers/attachments.ts` — tRPC router: `extract`, `get`, `downloadUrl`.
 - `src/app/api/attachments/download/route.ts` — raw GET Route Handler that verifies the signed token and streams the PDF bytes back. (tRPC isn't the right tool for binary download; this mirrors the `/api/auth/google/callback` carve-out from the tRPC baseline.)
-- `src/components/inbox/attachment-card.tsx` — Reader-pane card: filename, type icon, AI summary, dates chips, required-fields checklist, `life_graph_hits` clickable chips, Preview / Download / Save to Drive buttons.
+- `src/components/inbox/attachment-card.tsx` — Reader-pane card: filename, type icon, AI summary, dates chips, required-fields checklist, `life_graph_hits` clickable chips, Preview / Download buttons.
 - `src/components/inbox/attachment-preview-slideover.tsx` — `pdfjs-dist` viewer in a slide-over panel.
 - `src/components/inbox/pdfjs-worker.ts` — single-file worker setup for `pdfjs-dist` (sets `GlobalWorkerOptions.workerSrc`).
 - `src/lib/trpc/use-attachment-extract.ts` — thin hook composing `get` (lazy query) → `extract` (mutation on cache miss) → cache invalidation.
 - `tests/server/gmail-attachments.test.ts`
 - `tests/server/pdf-extract.test.ts`
-- `tests/server/pdf-ocr.test.ts`
 - `tests/server/attachment-llm.test.ts`
 - `tests/server/attachment-cache.test.ts`
 - `tests/server/attachment-download-token.test.ts`
@@ -68,7 +66,7 @@ Nothing for the human to do. All prerequisites from Phase 1 (env vars, Firebase 
 - `tests/api/attachments-download.test.ts`
 - `tests/components/inbox/attachment-card.test.tsx`
 - `tests/fixtures/pdfs/permission-slip.pdf` — small sample PDF committed as fixture.
-- `tests/fixtures/pdfs/scanned-receipt.pdf` — scanned-image PDF (forces OCR fallback).
+- `tests/fixtures/pdfs/scanned-receipt.pdf` — scanned-image PDF (no extractable text → skipped).
 - `tests/fixtures/pdfs/password-protected.pdf` — password-protected PDF fixture.
 
 ### Modified files
@@ -177,6 +175,11 @@ describe('ExtractedSchema', () => {
     expect(result.success).toBe(true)
   })
 
+  it('accepts the skipped variant for PDFs with no extractable text', () => {
+    const result = ExtractedSchema.safeParse({ skipped: true, reason: 'no_text_extractable' })
+    expect(result.success).toBe(true)
+  })
+
   it('rejects unknown skipped reasons', () => {
     const result = ExtractedSchema.safeParse({ skipped: true, reason: 'bogus' })
     expect(result.success).toBe(false)
@@ -227,7 +230,7 @@ const ExtractedFullSchema = z.object({
 
 const ExtractedSkippedSchema = z.object({
   skipped: z.literal(true),
-  reason: z.enum(['password_protected', 'unsupported_mime', 'extract_failed']),
+  reason: z.enum(['password_protected', 'no_text_extractable', 'unsupported_mime', 'extract_failed']),
 })
 
 export const ExtractedSchema = z.union([ExtractedFullSchema, ExtractedSkippedSchema])
@@ -261,7 +264,7 @@ Keep the existing `Email.attachments: Attachment[]` reference unchanged.
 - [ ] **Step 5: Confirm tests pass + type-check**
 
 Run: `npx jest tests/server/attachment-extract-schema.test.ts`
-Expected: PASS (4 tests).
+Expected: PASS (5 tests).
 
 Run: `npx tsc --noEmit`
 Expected: zero errors.
@@ -514,167 +517,7 @@ git commit -m "feat(pdf): unpdf-backed text extraction with password-protected d
 
 ---
 
-### Task 4: GPT-4o vision OCR fallback
-
-Slow path for scanned PDFs. Renders each page (up to 5) to a PNG data URL via `unpdf`'s rasterizer, then passes the images to GPT-4o as an image message and asks for the text.
-
-**Files:**
-- Create: `src/lib/server/pdf-ocr.ts`
-- Create: `tests/server/pdf-ocr.test.ts`
-
-- [ ] **Step 1: Write the failing test**
-
-Create `tests/server/pdf-ocr.test.ts`:
-
-```ts
-import { ocrPdfWithVision } from '@/lib/server/pdf-ocr'
-import * as aiModule from 'ai'
-
-jest.mock('ai', () => ({
-  generateText: jest.fn(),
-}))
-
-jest.mock('@ai-sdk/openai', () => ({
-  openai: jest.fn().mockReturnValue({ modelId: 'gpt-4o' }),
-}))
-
-// Mock the rasterizer — we isolate it in the impl so tests don't need a real PDF.
-jest.mock('@/lib/server/pdf-ocr', () => {
-  const actual = jest.requireActual('@/lib/server/pdf-ocr')
-  return {
-    ...actual,
-    __rasterizePagesForTest: jest.fn(),
-  }
-})
-
-describe('ocrPdfWithVision', () => {
-  beforeEach(() => { jest.clearAllMocks() })
-
-  it('returns concatenated text from GPT-4o vision', async () => {
-    const mod = await import('@/lib/server/pdf-ocr')
-    ;(mod.__rasterizePagesForTest as jest.Mock).mockResolvedValue([
-      'data:image/png;base64,AAA',
-      'data:image/png;base64,BBB',
-    ])
-    ;(aiModule.generateText as jest.Mock).mockResolvedValue({
-      text: 'Page 1 transcribed.\nPage 2 transcribed.',
-    })
-    const text = await ocrPdfWithVision(Buffer.from('%PDF'), { maxPages: 5 })
-    expect(text).toContain('Page 1 transcribed.')
-    const call = (aiModule.generateText as jest.Mock).mock.calls[0][0]
-    expect(call.messages[0].content).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'image' }),
-    ]))
-  })
-
-  it('returns empty string when rasterizer yields zero pages', async () => {
-    const mod = await import('@/lib/server/pdf-ocr')
-    ;(mod.__rasterizePagesForTest as jest.Mock).mockResolvedValue([])
-    const text = await ocrPdfWithVision(Buffer.from('%PDF'), { maxPages: 5 })
-    expect(text).toBe('')
-    expect(aiModule.generateText).not.toHaveBeenCalled()
-  })
-})
-```
-
-- [ ] **Step 2: Run and watch it fail**
-
-Run: `npx jest tests/server/pdf-ocr.test.ts`
-Expected: FAIL — module not found.
-
-- [ ] **Step 3: Implement**
-
-Create `src/lib/server/pdf-ocr.ts`:
-
-```ts
-import { openai } from '@ai-sdk/openai'
-import { generateText } from 'ai'
-
-/** Export in a testable form. Real impl lives in __rasterizePages; the test-seam re-export lets tests mock it. */
-export async function __rasterizePagesForTest(buffer: Buffer, maxPages: number): Promise<string[]> {
-  return __rasterizePages(buffer, maxPages)
-}
-
-async function __rasterizePages(buffer: Buffer, maxPages: number): Promise<string[]> {
-  // unpdf ships a rasterizer via `renderPageAsImage` in v1+. If that API is absent in the pinned version,
-  // fall back to pdfjs-dist's canvas rendering (Node: use `@napi-rs/canvas`).
-  const { getDocumentProxy, getResolvedPDFJS } = await import('unpdf')
-  const uint8 = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
-  const pdfjs = await getResolvedPDFJS()
-  const doc = await getDocumentProxy(uint8)
-  const pageCount = Math.min(doc.numPages, maxPages)
-  const images: string[] = []
-  for (let p = 1; p <= pageCount; p++) {
-    const page = await doc.getPage(p)
-    const viewport = page.getViewport({ scale: 1.5 })
-    // unpdf exposes a Node-safe canvas via its rendering helpers; if unavailable in this version,
-    // use @napi-rs/canvas (already an indirect dep of pdfjs-dist in Node).
-    const { createCanvas } = await import('@napi-rs/canvas')
-    const canvas = createCanvas(viewport.width, viewport.height)
-    const ctx = canvas.getContext('2d')
-    await page.render({
-      canvasContext: ctx as unknown as CanvasRenderingContext2D,
-      viewport,
-    }).promise
-    const dataUrl = canvas.toDataURL('image/png')
-    images.push(dataUrl)
-    void pdfjs
-  }
-  return images
-}
-
-export async function ocrPdfWithVision(
-  buffer: Buffer,
-  options: { maxPages: number },
-): Promise<string> {
-  const images = await __rasterizePagesForTest(buffer, options.maxPages)
-  if (images.length === 0) return ''
-
-  const { text } = await generateText({
-    model: openai('gpt-4o'),
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'Transcribe every page of this PDF. Output plain text, one page per section, separated by a blank line. Do not add commentary.' },
-          ...images.map(url => ({ type: 'image' as const, image: new URL(url) })),
-        ],
-      },
-    ],
-  })
-  return text
-}
-```
-
-Note: if `@napi-rs/canvas` isn't already transitively installed, `npm install @napi-rs/canvas` in this task and add it to the commit. Verify with `npm ls @napi-rs/canvas` before the Task 0 tests run green in the wild.
-
-- [ ] **Step 4: Install `@napi-rs/canvas` if not transitively present**
-
-Run: `npm ls @napi-rs/canvas`
-Expected: either a version listed (do nothing) or "empty" (then install it).
-
-If missing:
-
-```bash
-npm install @napi-rs/canvas
-git add package.json package-lock.json
-```
-
-- [ ] **Step 5: Confirm tests pass**
-
-Run: `npx jest tests/server/pdf-ocr.test.ts`
-Expected: PASS (2 tests).
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/lib/server/pdf-ocr.ts tests/server/pdf-ocr.test.ts
-git commit -m "feat(pdf): GPT-4o vision OCR fallback for scanned PDFs"
-```
-
----
-
-### Task 5: Attachment LLM prompt + structured extraction
+### Task 4: Attachment LLM prompt + structured extraction
 
 Takes extracted text + the user's Life Graph profiles and returns a validated `ExtractedFull` object. Uses `generateObject` with the `ExtractedLLMSchema` from Task 1.
 
@@ -838,7 +681,7 @@ git commit -m "feat(attachments): gpt-4o-mini structured extractor with Life Gra
 
 ---
 
-### Task 6: Firestore cache (attachment-cache.ts)
+### Task 5: Firestore cache (attachment-cache.ts)
 
 **Files:**
 - Create: `src/lib/server/attachment-cache.ts`
@@ -971,7 +814,7 @@ git commit -m "feat(attachments): Firestore cache for extraction results"
 
 ---
 
-### Task 7: Signed download-token utility
+### Task 6: Signed download-token utility
 
 HMAC-signed short-lived token for the `/api/attachments/download` route. Includes `uid`, `accountId`, `messageId`, `attachmentId`, `exp`. 5-minute TTL.
 
@@ -1117,7 +960,7 @@ git commit -m "feat(attachments): HMAC-signed short-lived download token"
 
 ---
 
-### Task 8: Download Route Handler (binary)
+### Task 7: Download Route Handler (binary)
 
 Raw GET Route Handler at `/api/attachments/download`. Verifies the signed token, resolves the user's refresh token for the account, fetches the attachment bytes from Gmail, streams them back with the correct `Content-Type` and `Content-Disposition`.
 
@@ -1243,9 +1086,9 @@ git commit -m "feat(attachments): raw GET /api/attachments/download streams byte
 
 ---
 
-### Task 9: tRPC `attachmentsRouter` — `extract`, `get`, `downloadUrl`
+### Task 8: tRPC `attachmentsRouter` — `extract`, `get`, `downloadUrl`
 
-Ties Tasks 2–7 together into the three procedures the UI calls.
+Ties Tasks 2–6 together into the three procedures the UI calls.
 
 **Files:**
 - Create: `src/server/trpc/routers/attachments.ts`
@@ -1263,7 +1106,6 @@ import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchAttachmentBytes } from '@/lib/server/gmail-attachments'
 import { extractPdfText } from '@/lib/server/pdf-extract'
-import { ocrPdfWithVision } from '@/lib/server/pdf-ocr'
 import { extractStructured } from '@/lib/server/attachment-llm'
 import { listProfiles } from '@/lib/server/profiles'
 import { signDownloadToken } from '@/lib/server/attachment-download-token'
@@ -1274,7 +1116,6 @@ jest.mock('@/lib/server/accounts')
 jest.mock('@/lib/server/google-oauth')
 jest.mock('@/lib/server/gmail-attachments')
 jest.mock('@/lib/server/pdf-extract')
-jest.mock('@/lib/server/pdf-ocr')
 jest.mock('@/lib/server/attachment-llm')
 jest.mock('@/lib/server/profiles')
 jest.mock('@/lib/server/attachment-download-token')
@@ -1350,7 +1191,6 @@ describe('attachments router', () => {
     const caller = attachmentsRouter.createCaller({ uid: 'u1' })
     const result = await caller.extract({ emailId: 'm1', attachmentId: 'at1', accountId: 'a1' })
 
-    expect(ocrPdfWithVision).not.toHaveBeenCalled()
     expect(extractStructured).toHaveBeenCalledWith(expect.objectContaining({
       text: expect.stringContaining('Annie zoo'),
       profiles: expect.arrayContaining([expect.objectContaining({ id: 'annie' })]),
@@ -1362,26 +1202,20 @@ describe('attachments router', () => {
     expect(result.extracted).toMatchObject({ summary: 'Annie zoo trip permission slip.' })
   })
 
-  // ------ extract — vision OCR fallback ------
-  it('extract falls back to vision OCR when unpdf text is too short', async () => {
+  // ------ extract — no extractable text short-circuit ------
+  it('extract writes skipped:no_text_extractable when unpdf returns trivially little text', async () => {
     ;(getCachedExtraction as jest.Mock).mockResolvedValue(null)
     ;(fetchAttachmentBytes as jest.Mock).mockResolvedValue(Buffer.from('%PDF fake'))
     ;(extractPdfText as jest.Mock).mockResolvedValue({
       text: 'hi', totalPages: 1, passwordProtected: false,
     })
-    ;(ocrPdfWithVision as jest.Mock).mockResolvedValue('Transcribed via GPT-4o vision.')
-    ;(extractStructured as jest.Mock).mockResolvedValue({
-      summary: 'OCR result.', dates: [], required_fields: [], deadlines: [],
-      money: [], persons_mentioned: [], life_graph_hits: {},
-    })
 
     const caller = attachmentsRouter.createCaller({ uid: 'u1' })
-    await caller.extract({ emailId: 'm1', attachmentId: 'at1', accountId: 'a1' })
+    const result = await caller.extract({ emailId: 'm1', attachmentId: 'at1', accountId: 'a1' })
 
-    expect(ocrPdfWithVision).toHaveBeenCalled()
-    expect(extractStructured).toHaveBeenCalledWith(expect.objectContaining({
-      text: expect.stringContaining('Transcribed via GPT-4o vision'),
-    }))
+    expect(result.extracted).toEqual({ skipped: true, reason: 'no_text_extractable' })
+    expect(extractStructured).not.toHaveBeenCalled()
+    expect(writeCachedExtraction).toHaveBeenCalledWith('u1', 'm1:at1', { skipped: true, reason: 'no_text_extractable' })
   })
 
   // ------ extract — password-protected short-circuit ------
@@ -1396,7 +1230,6 @@ describe('attachments router', () => {
     const result = await caller.extract({ emailId: 'm1', attachmentId: 'at1', accountId: 'a1' })
 
     expect(result.extracted).toEqual({ skipped: true, reason: 'password_protected' })
-    expect(ocrPdfWithVision).not.toHaveBeenCalled()
     expect(extractStructured).not.toHaveBeenCalled()
     expect(writeCachedExtraction).toHaveBeenCalledWith('u1', 'm1:at1', { skipped: true, reason: 'password_protected' })
   })
@@ -1474,7 +1307,6 @@ import { getDecryptedRefreshToken, listAccounts } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchAttachmentBytes } from '@/lib/server/gmail-attachments'
 import { extractPdfText } from '@/lib/server/pdf-extract'
-import { ocrPdfWithVision } from '@/lib/server/pdf-ocr'
 import { extractStructured } from '@/lib/server/attachment-llm'
 import { listProfiles } from '@/lib/server/profiles'
 import { signDownloadToken } from '@/lib/server/attachment-download-token'
@@ -1534,14 +1366,10 @@ export const attachmentsRouter = router({
         return { extracted: skipped, cached: false }
       }
 
-      // 4. Vision-OCR fallback when the fast path yields trivially little text.
-      let workingText = pdf.text
+      // 4. No extractable text (e.g., scanned image PDFs) → skip with no_text_extractable.
+      const workingText = pdf.text
       if (workingText.trim().length < MIN_TEXT_CHARS) {
-        workingText = await ocrPdfWithVision(bytes, { maxPages: MAX_PAGES })
-      }
-
-      if (workingText.trim().length === 0) {
-        const skipped: Extracted = { skipped: true, reason: 'extract_failed' }
+        const skipped: Extracted = { skipped: true, reason: 'no_text_extractable' }
         await writeCachedExtraction(ctx.uid, key, skipped)
         return { extracted: skipped, cached: false }
       }
@@ -1615,7 +1443,7 @@ git commit -m "feat(trpc): attachmentsRouter with extract (lazy+cached), get, do
 
 ---
 
-### Task 10: `useAttachmentExtract` composition hook
+### Task 9: `useAttachmentExtract` composition hook
 
 Small client helper that wires `get` → `extract` correctly (fire the query, mutate on miss, invalidate on success).
 
@@ -1709,7 +1537,7 @@ git commit -m "feat(trpc): useAttachmentExtract hook composing get + extract"
 
 ---
 
-### Task 11: PDF.js worker wiring
+### Task 10: PDF.js worker wiring
 
 Single file sets `GlobalWorkerOptions.workerSrc` so `pdfjs-dist` loads its worker correctly under Next.js 16's bundler.
 
@@ -1753,7 +1581,7 @@ git commit -m "feat(pdf): pdfjs-dist worker wiring"
 
 ---
 
-### Task 12: Attachment preview slide-over
+### Task 11: Attachment preview slide-over
 
 `pdfjs-dist`-powered inline viewer. Fetches bytes via the signed `downloadUrl` procedure.
 
@@ -1872,9 +1700,9 @@ git commit -m "feat(inbox): pdfjs-dist preview slide-over"
 
 ---
 
-### Task 13: Attachment card component
+### Task 12: Attachment card component
 
-Reader-pane card. Composes `useAttachmentExtract`, renders all the metadata, owns Preview / Download / Save-to-Drive buttons.
+Reader-pane card. Composes `useAttachmentExtract`, renders all the metadata, owns Preview / Download buttons.
 
 **Files:**
 - Create: `src/components/inbox/attachment-card.tsx`
@@ -2019,7 +1847,7 @@ Create `src/components/inbox/attachment-card.tsx`:
 "use client"
 
 import { useState } from 'react'
-import { FileText, Lock, Download, Eye, CloudUpload } from 'lucide-react'
+import { FileText, Lock, Download, Eye } from 'lucide-react'
 import { trpc } from '@/lib/trpc/client'
 import { useAttachmentExtract } from '@/lib/trpc/use-attachment-extract'
 import { AttachmentPreviewSlideover } from './attachment-preview-slideover'
@@ -2141,7 +1969,11 @@ export function AttachmentCard(props: Props) {
 
       {isPdf && skipped && extracted && 'reason' in extracted && (
         <p className="text-xs text-muted-foreground">
-          {extracted.reason === 'password_protected' ? 'Password-protected — extraction skipped.' : 'Extraction unavailable.'}
+          {extracted.reason === 'password_protected'
+            ? 'Password-protected — extraction skipped.'
+            : extracted.reason === 'no_text_extractable'
+            ? 'Extraction unavailable — open the preview to read the PDF.'
+            : 'Extraction unavailable.'}
         </p>
       )}
 
@@ -2153,10 +1985,6 @@ export function AttachmentCard(props: Props) {
         )}
         <button type="button" onClick={handleDownload} className="flex items-center gap-1 text-xs uppercase tracking-wider">
           <Download className="h-3 w-3" /> Download
-        </button>
-        {/* Save to Drive — requires drive.file scope (already granted in Phase 1). */}
-        <button type="button" className="ml-auto flex items-center gap-1 text-xs uppercase tracking-wider opacity-50" disabled title="Save to Drive (coming soon)">
-          <CloudUpload className="h-3 w-3" /> Drive
         </button>
       </div>
 
@@ -2176,8 +2004,6 @@ export function AttachmentCard(props: Props) {
 }
 ```
 
-Note on "Save to Drive": the scope is present (Phase 1 Task — `SCOPES` includes `drive.file`). Implementing the actual upload is a small follow-up (a `trpc.attachments.saveToDrive` mutation that calls `POST https://www.googleapis.com/upload/drive/v3/files?uploadType=media`). Leaving the button disabled-with-tooltip in v1 is deliberate; wire it in a future single-task patch.
-
 - [ ] **Step 4: Confirm tests pass**
 
 Run: `npx jest tests/components/inbox/attachment-card.test.tsx`
@@ -2192,7 +2018,7 @@ git commit -m "feat(inbox): attachment card with AI summary, chips, preview + do
 
 ---
 
-### Task 14: Wire the card into the Reader pane
+### Task 13: Wire the card into the Reader pane
 
 Slot `<AttachmentCard>` into whatever Reader pane exists (Phase 3 or the pre-Phase-3 Reader).
 
@@ -2250,7 +2076,7 @@ git commit -m "feat(inbox): render AttachmentCard for each attachment in the Rea
 
 ---
 
-### Task 15: Full verification + merge prep
+### Task 14: Full verification + merge prep
 
 - [ ] **Step 1: Full suite**
 
@@ -2272,7 +2098,7 @@ Log in with each of Mary's three Gmail accounts. Find an email from Blessed Sacr
 - [ ] Re-opening the email after reload shows cached data instantly (no visible loading state).
 - [ ] Preview slide-over renders the PDF pages.
 - [ ] Download downloads the correct file.
-- [ ] A scanned PDF (forward a photo-of-document from your phone to yourself) triggers the vision-OCR fallback within ~10-20 seconds; summary is still sensible.
+- [ ] A scanned PDF (forward a photo-of-document from your phone to yourself) shows the "Extraction unavailable — open the preview to read the PDF." message and no LLM is called.
 - [ ] A password-protected PDF (encrypt one via Preview.app and send it to yourself) shows the lock icon + skip message.
 
 Record the results in the commit message.
@@ -2285,7 +2111,7 @@ git commit --allow-empty -m "chore: Phase 5 PDF extraction verified end-to-end
 Suite: 0 tsc errors, jest green, 0 lint errors.
 Manual smoke (mary@tribe.ai):
 - Fast-path text PDF (permission slip): ✅
-- Scanned PDF vision OCR fallback: ✅
+- Scanned PDF no_text_extractable skip: ✅ 'open preview to read' message
 - Password-protected PDF: ✅ lock icon
 - Cache hit on re-open: ✅
 - Preview slide-over: ✅
@@ -2303,10 +2129,10 @@ PR title:
 
 PR body should summarize:
 - New `attachmentsRouter` procedures: `extract`, `get`, `downloadUrl`.
-- Pipeline: Gmail bytes → unpdf (fast) → GPT-4o vision (slow) → gpt-4o-mini structured → Firestore cache.
+- Pipeline: Gmail bytes → unpdf text extraction → gpt-4o-mini structured → Firestore cache. PDFs with no extractable text (scans) are cached as `skipped: 'no_text_extractable'` and surfaced with an "open the preview to read the PDF" message — no vision OCR in v1.
 - UI: `<AttachmentCard>` with summary + chips, `<AttachmentPreviewSlideover>` with pdfjs-dist.
-- No OAuth scope changes (`drive.file` was already granted in Phase 1; no re-consent).
-- What's deferred: Save-to-Drive upload (button present, disabled), in-PDF editing, `.docx`/`.xlsx`.
+- No OAuth scope changes (`drive.file` was already granted in Phase 1; no re-consent; Phase 5 does not itself call the Drive API).
+- What's deferred: vision OCR for scanned PDFs, in-PDF editing, `.docx`/`.xlsx`.
 
 ---
 
@@ -2317,7 +2143,7 @@ Before Phase 6 starts on top of this branch:
 1. `npx tsc --noEmit` — clean.
 2. `npx jest` — full suite green.
 3. `npm run lint` — clean.
-4. Manual smoke from Task 15 Step 2 — all ✅.
+4. Manual smoke from Task 14 Step 2 — all ✅.
 5. Firestore check: `users/{mary-uid}/attachments/` contains docs keyed `${messageId}:${attachmentId}` with `extracted` + `extractedAt` — confirms the cache is actually writing.
 6. Network-tab check: opening a previously-extracted email shows one `/api/trpc/attachments.get` batch call and **no** subsequent `attachments.extract` call. The cache is doing its job.
 
@@ -2327,18 +2153,17 @@ Spec-to-task coverage for the PDF Extraction section of the spec:
 
 | Spec bullet | Task |
 | --- | --- |
-| Lazy extraction on first open + Firestore cache keyed `(messageId, attachmentId)`, never invalidated | Tasks 6, 9 (extract) |
+| Lazy extraction on first open + Firestore cache keyed `(messageId, attachmentId)`, never invalidated | Tasks 5, 8 (extract) |
 | Fetch attachment bytes via Gmail API | Task 2 |
 | Text via unpdf (replaces pdf-parse per plan) | Task 3 |
-| Vision OCR fallback when text is empty/short | Tasks 4, 9 |
-| gpt-4o-mini structured extraction with Life Graph reference | Task 5 |
-| Attachment card: filename, icon, summary, dates, required fields, life_graph_hits chips | Task 13 |
-| Chips copy to clipboard (no auto-fill in v1) | Task 13 |
-| Preview button → inline PDF.js slide-over | Tasks 11, 12, 13 |
-| Download button | Tasks 8, 13 |
-| Save-to-Drive button (uses existing `drive.file` scope) | Task 13 (disabled stub; scope confirmed in P3) |
-| Password-protected PDFs → skipped + lock icon | Tasks 3, 9, 13 |
-| Non-PDFs → filename + download only, no extract call | Task 13 |
-| Idempotent cache-miss → extract → cache-hit flow | Task 9 test suite |
+| No extractable text (scans) → skipped with `no_text_extractable`; UI directs user to preview | Tasks 1, 8, 12 |
+| gpt-4o-mini structured extraction with Life Graph reference | Task 4 |
+| Attachment card: filename, icon, summary, dates, required fields, life_graph_hits chips | Task 12 |
+| Chips copy to clipboard (no auto-fill in v1) | Task 12 |
+| Preview button → inline PDF.js slide-over | Tasks 10, 11, 12 |
+| Download button | Tasks 7, 12 |
+| Password-protected PDFs → skipped + lock icon | Tasks 3, 8, 12 |
+| Non-PDFs → filename + download only, no extract call | Task 12 |
+| Idempotent cache-miss → extract → cache-hit flow | Task 8 test suite |
 
-No spec bullet is uncovered. No placeholders, no TBDs, no "similar to Task N" shortcuts.
+No spec bullet is uncovered. No placeholders, no TBDs, no "similar to Task N" shortcuts. Deliberately deferred from this phase: vision OCR fallback for scanned PDFs.

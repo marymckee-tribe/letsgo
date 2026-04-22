@@ -4,9 +4,9 @@
 
 **Goal:** Replace the current `/inbox` page with the three-pane triage surface defined in the design spec — Queue (320px) / Reader (flex) / Action deck (300px) — using the Phase 2 data model (`classification`, `senderIdentity`, `hubStatus`, `sourceQuote`, `confidence`, `EmailActionStatus`). Wire a `Clear` button through a new `inbox.markCleared` tRPC mutation stub (Firestore-cached `hubStatus: 'CLEARED'` — Gmail sync is Phase 4). Land editable action-card forms that display correctly but commit via no-op in Phase 3 (Phase 4 wires the real Google writes). Delete the Phase 2 `action-compat` shim.
 
-**Architecture:** A new page at `src/app/inbox/page.tsx` (replacing the current file) composes three columns built from three new subcomponents — `QueueList`, `EmailReader`, `ActionDeck` — each a focused file. The page uses tRPC hooks directly (`trpc.inbox.digest.useQuery()` for the queue; `trpc.inbox.markCleared.useMutation()` for clearing) and React Aria Components for the three-column landmark / keyboard-nav skeleton. A Cmd+K quick-jump palette uses `cmdk`. Row treatment per classification is a pure mapping function (`rowTreatmentFor(classification)`) lifted out of the component tree so it is independently testable. The store exposes a `clearEmail(id)` optimistic mutation and a `restoreEmail(id)` counterpart, both backed by `inbox.markCleared` + `inbox.markUnread` mutations that update Firestore only — Gmail `gmail.modify` remains a Phase 4 task.
+**Architecture:** A new page at `src/app/inbox/page.tsx` (replacing the current file) composes three columns built from three new subcomponents — `QueueList`, `EmailReader`, `ActionDeck` — each a focused file. The page uses tRPC hooks directly (`trpc.inbox.digest.useQuery()` for the queue; `trpc.inbox.markCleared.useMutation()` for clearing) and React Aria Components for the three-column landmark / keyboard-nav skeleton. The page also reads a `?thread=<emailId>` search param on mount (used by the Phase 7 home widget's Bouncer deep-link) to pre-select an email. Row treatment per classification is a pure mapping function (`rowTreatmentFor(classification)`) lifted out of the component tree so it is independently testable. The store exposes a `clearEmail(id)` optimistic mutation and a `restoreEmail(id)` counterpart, both backed by `inbox.markCleared` + `inbox.markUnread` mutations that update Firestore only — Gmail `gmail.modify` remains a Phase 4 task.
 
-**Tech Stack:** Next.js 16 (App Router), React 19, tRPC v11, `@tanstack/react-query` v5 (optimistic updates), `react-aria-components`, `cmdk`, `date-fns` (`format` with `h:mm a`), Tailwind 4, `lucide-react`, `framer-motion` (already installed — only used for deck slide-in), `sonner` (toasts), Jest + React Testing Library + `jest-environment-jsdom`.
+**Tech Stack:** Next.js 16 (App Router), React 19, tRPC v11, `@tanstack/react-query` v5 (optimistic updates), `react-aria-components`, `date-fns` (`format` with `h:mm a`), Tailwind 4, `lucide-react`, `framer-motion` (already installed — only used for deck slide-in), `sonner` (toasts), Jest + React Testing Library + `jest-environment-jsdom`.
 
 **Spec reference:** `docs/superpowers/specs/2026-04-17-inbox-redesign-design.md` — specifically the "User Interface" → "/inbox page — three-pane triage" and "Lifecycle & disappearance" sections.
 
@@ -21,13 +21,12 @@ Next.js 16 and React 19 both have breaking changes vs. training data. Read BEFOR
 - `node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md` — App Router conventions
 - `node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md` — breaking changes
 - `https://react-spectrum.adobe.com/react-aria/components.html` — React Aria Components API (use Context7 / WebFetch when starting Task 3)
-- `https://cmdk.paco.me/` — `cmdk` API shape
 - `https://tanstack.com/query/v5/docs/react/guides/optimistic-updates` — TanStack Query v5 optimistic-update pattern for our Clear / Restore flows
 - `https://date-fns.org/v3.0.0/docs/format` — the `h:mm a` token string
 
 `AGENTS.md` says: *"Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices."* Do that. Do not assume patterns from memory.
 
-If anything in this plan conflicts with what React Aria or `cmdk` docs actually require, follow the docs and update the plan.
+If anything in this plan conflicts with what React Aria docs actually require, follow the docs and update the plan.
 
 ---
 
@@ -43,7 +42,6 @@ If anything in this plan conflicts with what React Aria or `cmdk` docs actually 
 - `src/components/inbox/action-deck.tsx` — right column. Maps `suggestedActions` → `ActionCard` instances.
 - `src/components/inbox/action-card.tsx` — single editable action card (CALENDAR_EVENT / TODO / NEEDS_REPLY), low-confidence glyph, primary no-op button, Skip button.
 - `src/components/inbox/recently-cleared.tsx` — collapsed accordion at bottom of queue, Restore per-row.
-- `src/components/inbox/command-palette.tsx` — Cmd+K quick-jump, powered by `cmdk`.
 - `src/components/inbox/row-treatment.ts` — pure function mapping `EmailClassification` → row style config.
 - `src/components/inbox/format-time.ts` — pure function wrapping `date-fns` `format(date, 'h:mm a')` + `format(date, 'MMM d, h:mm a')` helpers.
 - `src/server/trpc/routers/inbox.ts` — **modify**: add `markCleared` + `markUnread` mutations (stubs that only touch Firestore; Gmail is Phase 4).
@@ -59,7 +57,6 @@ If anything in this plan conflicts with what React Aria or `cmdk` docs actually 
 - `tests/components/inbox/action-card.test.tsx`
 - `tests/components/inbox/action-deck.test.tsx`
 - `tests/components/inbox/recently-cleared.test.tsx`
-- `tests/components/inbox/command-palette.test.tsx`
 - `tests/components/inbox/inbox-page.test.tsx` — integration: render the page with mocked tRPC hooks, assert three-pane semantics.
 - `tests/lib/store-clear-email.test.tsx` — optimistic update + rollback for `clearEmail`.
 
@@ -67,7 +64,7 @@ If anything in this plan conflicts with what React Aria or `cmdk` docs actually 
 - `src/lib/store.tsx` — add `clearEmail(id)` / `restoreEmail(id)` mutation wrappers using `trpc.inbox.markCleared` + `trpc.inbox.markUnread` with optimistic cache update + rollback. Remove `actOnEmailAction` and `dismissEmailAction` (superseded by the deck's own local state + Phase 4 mutations). Expose a `recentlyClearedLimit` derived value (default 10).
 - `src/server/trpc/routers/inbox.ts` — add `markCleared` + `markUnread` procedures.
 - `src/server/trpc/routers/inbox.ts` — modify `digest` query to merge in `hubStatus` from Firestore (so a cleared email stays cleared across refetches).
-- `package.json` — add `cmdk`, `react-aria-components`, `date-fns`.
+- `package.json` — add `react-aria-components`, `date-fns`.
 - `jest.config.mjs` — add `projects` config so component tests run under `jsdom` while server tests stay on `node`. (The current config is node-only; component tests need DOM.)
 - `tests/setup.ts` — add `@testing-library/jest-dom` import so `toBeInTheDocument` etc. are available.
 
@@ -119,10 +116,10 @@ The following are NOT part of Phase 3 — do not add tasks for them, and if temp
 Run:
 
 ```bash
-npm install cmdk react-aria-components date-fns
+npm install react-aria-components date-fns
 ```
 
-Expected: `cmdk`, `react-aria-components`, and `date-fns` added to `dependencies` in `package.json`.
+Expected: `react-aria-components` and `date-fns` added to `dependencies` in `package.json`.
 
 - [ ] **Step 2: Split Jest into node + jsdom projects**
 
@@ -197,7 +194,7 @@ Expected: jest boots both projects and existing tests still pass (Phase 1 + Phas
 
 ```bash
 git add package.json package-lock.json jest.config.mjs tests/setup.ts
-git commit -m "chore(deps): add cmdk + react-aria-components + date-fns; split jest into node+jsdom projects"
+git commit -m "chore(deps): add react-aria-components + date-fns; split jest into node+jsdom projects"
 ```
 
 ---
@@ -1729,17 +1726,15 @@ git commit -m "feat(inbox): EmailReader (boxed AI summary, full-email expander, 
 
 ---
 
-### Task 11: `ActionDeck` + `RecentlyCleared` + `CommandPalette` components
+### Task 11: `ActionDeck` + `RecentlyCleared` components
 
-Three smaller components grouped into one task to keep commit cadence reasonable.
+Two smaller components grouped into one task to keep commit cadence reasonable.
 
 **Files:**
 - Create: `src/components/inbox/action-deck.tsx`
 - Create: `src/components/inbox/recently-cleared.tsx`
-- Create: `src/components/inbox/command-palette.tsx`
 - Create: `tests/components/inbox/action-deck.test.tsx`
 - Create: `tests/components/inbox/recently-cleared.test.tsx`
-- Create: `tests/components/inbox/command-palette.test.tsx`
 
 - [ ] **Step 1: ActionDeck test**
 
@@ -1943,137 +1938,21 @@ export function RecentlyCleared({ emails, onRestore, limit = 10 }: Props) {
 }
 ```
 
-- [ ] **Step 5: CommandPalette test**
-
-Create `tests/components/inbox/command-palette.test.tsx`:
-
-```tsx
-import { render, screen, fireEvent } from '@testing-library/react'
-import { CommandPalette } from '@/components/inbox/command-palette'
-import type { Email } from '@/lib/store'
-
-const emails: Email[] = [
-  { id: 'm1', subject: 'Zoo Trip Thursday', sender: 'Ms. Redd', classification: 'CALENDAR_EVENT', snippet: 's', fullBody: '', attachments: [], suggestedActions: [], date: 0, hubStatus: 'UNREAD' },
-  { id: 'm2', subject: 'Gymnastics reminder', sender: 'coach@gym.com', classification: 'FYI', snippet: 's', fullBody: '', attachments: [], suggestedActions: [], date: 0, hubStatus: 'UNREAD' },
-]
-
-describe('CommandPalette', () => {
-  it('opens when Cmd+K is pressed', () => {
-    render(<CommandPalette emails={emails} onSelect={() => {}} />)
-    expect(screen.queryByPlaceholderText(/Jump to/)).toBeNull()
-    fireEvent.keyDown(window, { key: 'k', metaKey: true })
-    expect(screen.getByPlaceholderText(/Jump to/)).toBeInTheDocument()
-  })
-
-  it('also opens on Ctrl+K', () => {
-    render(<CommandPalette emails={emails} onSelect={() => {}} />)
-    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
-    expect(screen.getByPlaceholderText(/Jump to/)).toBeInTheDocument()
-  })
-
-  it('filters by subject substring and fires onSelect with the id', () => {
-    const onSelect = jest.fn()
-    render(<CommandPalette emails={emails} onSelect={onSelect} />)
-    fireEvent.keyDown(window, { key: 'k', metaKey: true })
-    const input = screen.getByPlaceholderText(/Jump to/) as HTMLInputElement
-    fireEvent.change(input, { target: { value: 'Zoo' } })
-    fireEvent.click(screen.getByText(/Zoo Trip Thursday/))
-    expect(onSelect).toHaveBeenCalledWith('m1')
-  })
-})
-```
-
-- [ ] **Step 6: CommandPalette implementation**
-
-Create `src/components/inbox/command-palette.tsx`:
-
-```tsx
-"use client"
-
-import { useEffect, useState } from "react"
-import { Command } from "cmdk"
-import type { Email } from "@/lib/store"
-
-interface Props {
-  emails: Email[]
-  onSelect: (id: string) => void
-}
-
-export function CommandPalette({ emails, onSelect }: Props) {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState("")
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        setOpen((x) => !x)
-      }
-      if (e.key === "Escape") setOpen(false)
-    }
-    window.addEventListener("keydown", handler)
-    return () => window.removeEventListener("keydown", handler)
-  }, [])
-
-  if (!open) return null
-
-  return (
-    <div
-      role="dialog"
-      aria-label="Quick jump"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/20 pt-32"
-      onClick={() => setOpen(false)}
-    >
-      <div onClick={(e) => e.stopPropagation()} className="w-[480px] border border-border bg-white shadow-[8px_8px_0_rgba(0,0,0,0.08)]">
-        <Command label="Quick jump" shouldFilter={true}>
-          <Command.Input
-            autoFocus
-            value={query}
-            onValueChange={setQuery}
-            placeholder="Jump to sender or subject…"
-            className="w-full border-b border-border bg-white px-4 py-3 text-sm outline-none"
-          />
-          <Command.List className="max-h-72 overflow-y-auto">
-            <Command.Empty className="px-4 py-6 text-center text-xs text-muted-foreground">
-              No matches.
-            </Command.Empty>
-            {emails.map((e) => (
-              <Command.Item
-                key={e.id}
-                value={`${e.subject} ${e.sender}`}
-                onSelect={() => {
-                  onSelect(e.id)
-                  setOpen(false)
-                }}
-                className="flex cursor-pointer items-center gap-3 border-b border-border/40 px-4 py-2 text-sm hover:bg-muted data-[selected=true]:bg-muted"
-              >
-                <span className="flex-1 truncate">{e.subject}</span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">{e.sender}</span>
-              </Command.Item>
-            ))}
-          </Command.List>
-        </Command>
-      </div>
-    </div>
-  )
-}
-```
-
-- [ ] **Step 7: Run all three test files**
+- [ ] **Step 5: Run both test files**
 
 Run:
 
 ```bash
-npx jest tests/components/inbox/action-deck.test.tsx tests/components/inbox/recently-cleared.test.tsx tests/components/inbox/command-palette.test.tsx
+npx jest tests/components/inbox/action-deck.test.tsx tests/components/inbox/recently-cleared.test.tsx
 ```
 
-Expected: PASS (3 + 4 + 3 = 10 tests).
+Expected: PASS (3 + 4 = 7 tests).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/components/inbox/action-deck.tsx src/components/inbox/recently-cleared.tsx src/components/inbox/command-palette.tsx tests/components/inbox/action-deck.test.tsx tests/components/inbox/recently-cleared.test.tsx tests/components/inbox/command-palette.test.tsx
-git commit -m "feat(inbox): ActionDeck + RecentlyCleared + CommandPalette (Cmd+K)"
+git add src/components/inbox/action-deck.tsx src/components/inbox/recently-cleared.tsx tests/components/inbox/action-deck.test.tsx tests/components/inbox/recently-cleared.test.tsx
+git commit -m "feat(inbox): ActionDeck + RecentlyCleared"
 ```
 
 ---
@@ -2151,18 +2030,20 @@ export function QueueList({ emails, profiles, selectedId, onSelect, onRestore }:
 
 - [ ] **Step 2: Replace the inbox page**
 
+The page reads a `?thread=<emailId>` search param on mount so the Phase 7 home-widget Bouncer can deep-link a specific email. If the param is present AND the email is in the current list, it wins over the default "first active email" selection. Otherwise we fall back to the first active email.
+
 Overwrite `src/app/inbox/page.tsx` with:
 
 ```tsx
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { Inbox as InboxIcon } from "lucide-react"
 import { useHub, useInboxEmails, useClearEmail, useRestoreEmail } from "@/lib/store"
 import { QueueList } from "@/components/inbox/queue-list"
 import { EmailReader } from "@/components/inbox/email-reader"
 import { ActionDeck } from "@/components/inbox/action-deck"
-import { CommandPalette } from "@/components/inbox/command-palette"
 
 export default function InboxPage() {
   const { profiles } = useHub()
@@ -2171,14 +2052,32 @@ export default function InboxPage() {
   const restoreMut = useRestoreEmail()
   const emails = data?.emails ?? []
 
+  const searchParams = useSearchParams()
+  const threadParam = searchParams?.get("thread") ?? null
+
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Track whether we've already resolved the initial selection so we don't
+  // overwrite the user's subsequent manual clicks when emails re-fetch.
+  const initialSelectionResolved = useRef(false)
 
   useEffect(() => {
-    if (!selectedId && emails.length > 0) {
-      const firstActive = emails.find((e) => e.hubStatus !== "CLEARED")
-      if (firstActive) setSelectedId(firstActive.id)
+    if (initialSelectionResolved.current) return
+    if (emails.length === 0) return
+
+    // Prefer ?thread=<id> if present AND in the list (active or cleared).
+    if (threadParam && emails.some((e) => e.id === threadParam)) {
+      setSelectedId(threadParam)
+      initialSelectionResolved.current = true
+      return
     }
-  }, [emails, selectedId])
+
+    // Fallback: first active email (first email that is not CLEARED).
+    const firstActive = emails.find((e) => e.hubStatus !== "CLEARED")
+    if (firstActive) {
+      setSelectedId(firstActive.id)
+      initialSelectionResolved.current = true
+    }
+  }, [emails, threadParam])
 
   const activeEmail = emails.find((e) => e.id === selectedId && e.hubStatus !== "CLEARED")
 
@@ -2218,20 +2117,28 @@ export default function InboxPage() {
           <ActionDeck actions={activeEmail?.suggestedActions ?? []} />
         </aside>
       </div>
-
-      <CommandPalette emails={emails.filter((e) => e.hubStatus !== "CLEARED")} onSelect={setSelectedId} />
     </main>
   )
 }
 ```
 
+Note: `useSearchParams` is a client-side hook from `next/navigation`. Because this component is already a client component (`"use client"` at the top), no Suspense boundary is required here. If Next.js emits a build warning about Suspense + `useSearchParams`, wrap the default export in `<Suspense>` following the current Next.js docs — do not work around the warning.
+
 - [ ] **Step 3: Write the page integration test**
+
+The test mocks `@/lib/store` for data + mutations AND mocks `next/navigation`'s `useSearchParams` so each test can control `?thread=`. The search-param mock defaults to an empty `URLSearchParams`; individual tests override it via `mockReturnValueOnce`.
 
 Create `tests/components/inbox/inbox-page.test.tsx`:
 
 ```tsx
 import { render, screen, fireEvent } from '@testing-library/react'
 import InboxPage from '@/app/inbox/page'
+
+const mockUseSearchParams = jest.fn()
+
+jest.mock('next/navigation', () => ({
+  useSearchParams: () => mockUseSearchParams(),
+}))
 
 jest.mock('@/lib/store', () => {
   const clearMutate = jest.fn()
@@ -2263,6 +2170,11 @@ jest.mock('@/lib/store', () => {
 })
 
 describe('InboxPage', () => {
+  beforeEach(() => {
+    // Default: no ?thread= query param.
+    mockUseSearchParams.mockReturnValue(new URLSearchParams())
+  })
+
   it('renders three landmarks (queue / reader / action deck)', () => {
     render(<InboxPage />)
     expect(screen.getByLabelText(/triage queue/i)).toBeInTheDocument()
@@ -2286,13 +2198,27 @@ describe('InboxPage', () => {
     const { __clearMutate } = jest.requireMock('@/lib/store') as { __clearMutate: jest.Mock }
     expect(__clearMutate).toHaveBeenCalledWith({ id: 'm1' })
   })
+
+  it('selects the email from ?thread= query param on mount if present in the list; falls back to first if not present', () => {
+    // Case A: ?thread=m2 present AND in the list -> select m2 (not the first active m1).
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('thread=m2'))
+    const { unmount } = render(<InboxPage />)
+    expect(screen.getByRole('heading', { name: 'Weekly digest' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Zoo trip' })).toBeNull()
+    unmount()
+
+    // Case B: ?thread=unknown NOT in the list -> fall back to first active (m1).
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('thread=does-not-exist'))
+    render(<InboxPage />)
+    expect(screen.getByRole('heading', { name: 'Zoo trip' })).toBeInTheDocument()
+  })
 })
 ```
 
 - [ ] **Step 4: Run**
 
 Run: `npx jest tests/components/inbox/inbox-page.test.tsx`
-Expected: PASS (4 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 5: Type-check the full project**
 
@@ -2303,7 +2229,7 @@ Expected: zero errors. (The old `/inbox/page.tsx` is now replaced; any consumer 
 
 ```bash
 git add src/components/inbox/queue-list.tsx src/app/inbox/page.tsx tests/components/inbox/inbox-page.test.tsx
-git commit -m "feat(inbox): three-pane /inbox page composing QueueList + EmailReader + ActionDeck + Cmd+K"
+git commit -m "feat(inbox): three-pane /inbox page composing QueueList + EmailReader + ActionDeck; reads ?thread= deep-link"
 ```
 
 ---
@@ -2479,7 +2405,7 @@ Run: `npm run dev` and log in. Confirm:
 - [ ] Skip on an action card dismisses it from the deck (local state; does not persist).
 - [ ] Clear button in the reader header marks the email CLEARED. The row disappears from the active queue; header unread count drops by one (unless it was a NEWSLETTER).
 - [ ] `▸ Recently cleared (N)` expands on click, lists the cleared emails with Restore buttons. Restore flips the email back to UNREAD, returns it to the queue, and auto-collapses the section.
-- [ ] Cmd+K opens the command palette; typing filters by subject/sender; clicking a result selects that email.
+- [ ] Visiting `/inbox?thread=<existing-email-id>` pre-selects that email in the reader on load (Phase 7 home-widget deep-link). Visiting `/inbox?thread=does-not-exist` falls back to the first active email.
 - [ ] No `text-foreground/40` occurrences remain (confirm with `grep -rn "text-foreground/40" src`).
 
 Record each ✅/❌ in the final commit message.
@@ -2489,7 +2415,7 @@ Record each ✅/❌ in the final commit message.
 Find the "What's Next (Phase 3+)" section at the end of `docs/superpowers/plans/2026-04-21-inbox-phase-2-ai-extraction.md`. Replace the Phase 3 stub with:
 
 ```
-- **Phase 3:** ✅ Shipped. Three-pane /inbox, classification-driven row treatments, editable action cards (stubbed commits), Clear + Recently cleared via inbox.markCleared/markUnread, Cmd+K, contrast sweep, action-compat shim deleted. Plan: `docs/superpowers/plans/2026-04-21-inbox-phase-3-ui-redesign.md`.
+- **Phase 3:** ✅ Shipped. Three-pane /inbox, classification-driven row treatments, editable action cards (stubbed commits), Clear + Recently cleared via inbox.markCleared/markUnread, `?thread=` deep-link reader, contrast sweep, action-compat shim deleted. Plan: `docs/superpowers/plans/2026-04-21-inbox-phase-3-ui-redesign.md`.
 ```
 
 - [ ] **Step 4: Commit the verification note**
@@ -2506,7 +2432,7 @@ Manual smoke:
 - 12-hour clock everywhere: ✅
 - Clear + optimistic hubStatus update: ✅
 - Recently cleared expand + Restore + auto-collapse: ✅
-- Cmd+K quick-jump: ✅
+- ?thread= deep-link pre-select + fallback: ✅
 - action-compat shim removed: ✅
 - text-foreground/40 eliminated: ✅"
 ```
@@ -2518,7 +2444,8 @@ Open a PR from `feature/inbox-phase-3-ui` into `main`. Title:
 > Inbox Phase 3: three-pane UI redesign + Clear mutation stub
 
 Body summary:
-- Lists the new components (QueueList, EmailReader, ActionDeck, ActionCard, RecentlyCleared, CommandPalette).
+- Lists the new components (QueueList, EmailReader, ActionDeck, ActionCard, RecentlyCleared).
+- Notes the `?thread=<emailId>` deep-link support (for the Phase 7 home widget).
 - Notes that action-card primary buttons are stubs — Phase 4 wires Google Calendar / Tasks / Gmail writes.
 - Notes that Clear does not yet mark Gmail as read — Phase 4 adds `gmail.modify`.
 - Confirms the `action-compat` shim from Phase 2 is deleted.

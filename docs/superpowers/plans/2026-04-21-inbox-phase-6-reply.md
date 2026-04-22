@@ -4,7 +4,7 @@
 
 **Goal:** Add AI-drafted reply capability to the inbox. A new `inboxRouter.draftReply` procedure generates a `suggestedDraft` for each `NEEDS_REPLY` action via `generateObject`, and a new `inboxRouter.sendReply` procedure composes an RFC 2822 message with `mimetext` and POSTs it to `gmail.googleapis.com/gmail/v1/users/me/messages/send` including the original `threadId` so the reply threads. The Action-deck reply card wires up to both procedures with an optimistic UI, a scope-denied degradation path, and the Phase 4 idempotency contract.
 
-**Architecture:** Phase 6 is a server + UI slice layered on top of the tRPC baseline and the Phase 2 extraction pipeline. The existing `inboxRouter` gains two mutations (`draftReply`, `sendReply`), a shared `replyCommits` Firestore subcollection keyed by `${emailId}:${actionId}` for idempotency, and a tiny `gmail-sender.ts` server helper that mints an access token for the email's `accountId`, composes MIME with `mimetext`, and calls the Gmail `send` endpoint. AI drafts are stored on the action's `suggestedDraft` field so a page refresh doesn't regenerate. The UI replaces the Phase 3 Reply-card stub with a real editable textarea, a Send button that runs a mutation with optimistic `WRITING` status, and a scope-denied tooltip sourced from `trpc.accounts.list` (each account record carries its granted `scopes[]`). `NEEDS_REPLY` actions traverse the Phase 4 state machine: `PROPOSED → EDITING → WRITING → COMMITTED` (or `FAILED`). `DISMISSED_BY_CLEAR` is handled at the email level by Phase 3's Clear button and is not touched here.
+**Architecture:** Phase 6 is a server + UI slice layered on top of the tRPC baseline and the Phase 2 extraction pipeline. The existing `inboxRouter` gains two mutations (`draftReply`, `sendReply`) whose client-facing inputs do **not** include `accountId` — the server resolves it from a new `users/{uid}/emails/{emailId}` Firestore cache that `inboxRouter.digest` writes as a side effect. The router also adds a shared `replyCommits` subcollection keyed by `${emailId}:${actionId}` for idempotency, and a tiny `gmail-sender.ts` helper that mints an access token for the cached email's `accountId`, composes MIME with `mimetext`, and calls the Gmail `send` endpoint. AI drafts are stored on the action's `suggestedDraft` field so a page refresh doesn't regenerate. The UI replaces the Phase 3 Reply-card stub with a real editable textarea, a Send button that runs a mutation with optimistic `WRITING` status, and a scope-denied tooltip sourced from `trpc.accounts.list` (each account record carries its granted `scopes[]`). `NEEDS_REPLY` actions traverse the Phase 4 state machine: `PROPOSED → EDITING → WRITING → COMMITTED` (or `FAILED`). `DISMISSED_BY_CLEAR` is handled at the email level by Phase 3's Clear button and is not touched here.
 
 **Tech Stack:** Next.js 16 (App Router), tRPC v11 + `@trpc/react-query`, TanStack Query v5, Firebase Admin SDK (server) + Firestore, `mimetext@^3` (zero-dep RFC 2822 composer), `@ai-sdk/openai` + `ai` (`generateObject`), Zod v4, Jest + ts-jest.
 
@@ -43,6 +43,7 @@ If `mimetext`'s actual API differs from what this plan shows (v3 is stable as of
 - `src/lib/server/compose-reply.ts` — `composeReply({ from, to, subject, body, inReplyTo, references })` → base64url-encoded raw MIME string (thin wrapper over `mimetext`)
 - `src/lib/server/reply-commits.ts` — Firestore helpers: `getReplyCommit(uid, key)`, `putReplyCommit(uid, key, record)` (see Task 3 for the record shape). If Phase 4 already introduced `src/lib/server/commit-keys.ts`, reuse it instead — surfaced as a prereq check in Task 3 Step 1.
 - `src/lib/server/draft-reply.ts` — `generateReplyDraft({ email, action, profiles })` → `{ body: string }`; calls `generateObject` with a Zod `{ body: z.string() }` schema
+- `src/lib/server/email-cache.ts` — Firestore helpers `putEmailCache(uid, email)`, `getEmailCache(uid, emailId)` over `users/{uid}/emails/{emailId}`; owns the per-user email record that carries `accountId`, `threadId`, `subject`, `sender`, `fullBody`. See Task 7.5 and the Scope-Check section for rationale.
 - `src/components/inbox/reply-card.tsx` — the full editable reply card mounted into the Action deck (replaces the Phase 3 stub)
 - `src/lib/inbox/reply-scope.ts` — `hasReplyScope(account)` → boolean; pure function, exported so tests can pin it
 - `tests/server/gmail-sender.test.ts`
@@ -50,6 +51,7 @@ If `mimetext`'s actual API differs from what this plan shows (v3 is stable as of
 - `tests/server/compose-reply.test.ts`
 - `tests/server/reply-commits.test.ts`
 - `tests/server/draft-reply.test.ts`
+- `tests/server/email-cache.test.ts`
 - `tests/server/trpc/routers/inbox-reply.test.ts` — `sendReply` + `draftReply` procedures
 - `tests/components/inbox/reply-card.test.tsx`
 - `tests/lib/inbox/reply-scope.test.ts`
@@ -58,10 +60,10 @@ If `mimetext`'s actual API differs from what this plan shows (v3 is stable as of
 - `package.json` — add `mimetext` dep
 - `src/lib/store.tsx` — extend `EmailAction` type with `suggestedDraft?: string` and extend `Account` type exposed to the client with `scopes: string[]` (if not already)
 - `src/lib/server/classification-schema.ts` — extend `SuggestedActionSchema` with optional `suggestedDraft: z.string().optional()` (Phase 2 emits the action; Phase 6's `draftReply` populates `suggestedDraft` on demand)
-- `src/server/trpc/routers/inbox.ts` — add `draftReply` + `sendReply` procedures alongside existing `digest` (and whatever Phase 3/4 added)
+- `src/server/trpc/routers/inbox.ts` — add `draftReply` + `sendReply` procedures alongside existing `digest` (and whatever Phase 3/4 added); extend `digest` with a side-effect write to `users/{uid}/emails/{emailId}` via `putEmailCache` so `draftReply` / `sendReply` can resolve `accountId` server-side (Task 7.5)
 - `src/app/inbox/page.tsx` — swap the existing `NEEDS_REPLY` card stub for `<ReplyCard email={...} action={...} />`
 - `src/components/inbox/action-deck.tsx` (if Phase 3 named it this; otherwise the file that renders the Action deck) — route `NEEDS_REPLY` actions to `<ReplyCard />`
-- `firestore.rules` — add read/write rule for `users/{uid}/replyCommits/{key}` subcollection (tighten to owner-only)
+- `firestore.rules` — add read/write rules for `users/{uid}/replyCommits/{key}`, `users/{uid}/replyDrafts/{key}`, and `users/{uid}/emails/{emailId}` subcollections (tighten to owner-only)
 
 ### Out of scope for Phase 6
 - Attachments on replies (deferred to a later phase)
@@ -73,20 +75,40 @@ If `mimetext`'s actual API differs from what this plan shows (v3 is stable as of
 
 ---
 
+## Scope-Check vs. Original Brief
+
+The original brief specified the `sendReply` input as `{ emailId, actionId, body, subject?, to? }` and the `draftReply` input as `{ emailId, actionId, action, senderPersonId }`. An earlier draft of this plan added `accountId` to both mutation inputs. That extension is **wrong** and has been reverted here: clients should not carry infrastructure knowledge about which Gmail account an email came from. The server can — and now does — look it up from the email's stored record.
+
+**What changed:**
+1. `accountId` is removed from both mutation input schemas.
+2. The server derives `accountId` from a persisted Firestore email record at `users/{uid}/emails/{emailId}`. The record is written by `inboxRouter.digest` (see the new Task 7.5) and read by `draftReply` / `sendReply`.
+
+**Prerequisite flagged:** Phase 2's `inboxRouter.digest` currently returns emails **transiently** — the `Email` objects (including `accountId`) live only in the tRPC response and the client-side store; nothing is persisted. Phase 6 therefore takes ownership of the small migration: adding `users/{uid}/emails/{emailId}` as a durable cache keyed by Gmail message id, written by `digest` as a side effect, and read by `draftReply` / `sendReply` to resolve `accountId` server-side. If a future phase formalizes this cache differently, migrate the read path then. If Phase 2's digest pipeline changes to persist emails before Phase 6 lands, delete Task 7.5 and reuse that collection instead.
+
+This also has a durability win for production: the email record — including `threadId`, `subject`, `fullBody`, `sender`, and `accountId` — survives a page refresh, so "Clear" and "Reply" both have an authoritative server-side source of truth rather than relying on the client-side store to stay hydrated.
+
+---
+
 ## Prerequisites (one-time)
 
 - [ ] **P1. Confirm the tRPC baseline.** Run `ls src/server/trpc/routers/inbox.ts` — must exist. If not, stop and execute `2026-04-21-architecture-trpc-react-query.md` first.
 - [ ] **P2. Confirm Phase 2 landed.** Run `grep -n "EmailActionStatus" src/lib/store.tsx` — must return a union containing `'PROPOSED' | 'EDITING' | 'WRITING' | 'COMMITTED' | 'DISMISSED' | 'FAILED'`. If it still says `'PENDING' | 'APPROVED' | 'DISMISSED'`, stop and execute Phase 2 first.
 - [ ] **P3. Confirm the OAuth scope list already includes `gmail.send` and `gmail.modify`.** Run `grep -n "gmail" src/lib/server/google-oauth.ts`. Expected: both `gmail.send` and `gmail.modify` appear in `SCOPES`. If either is missing, add it here before proceeding — the rest of the plan assumes new accounts are linked with both scopes granted. (At time of writing the `SCOPES` constant in `src/lib/server/google-oauth.ts` already contains `https://www.googleapis.com/auth/gmail.send` and `https://www.googleapis.com/auth/gmail.modify` — Phase 1 landed them — so this is expected to be a no-op verification.)
-- [ ] **P4. Firestore rules for the new `replyCommits` subcollection.** If the repo has `firestore.rules`, add a rule like:
+- [ ] **P4. Firestore rules for the new `replyCommits`, `replyDrafts`, and `emails` subcollections.** If the repo has `firestore.rules`, add rules like:
 
   ```
   match /users/{uid}/replyCommits/{key} {
     allow read, write: if request.auth != null && request.auth.uid == uid;
   }
+  match /users/{uid}/replyDrafts/{key} {
+    allow read, write: if request.auth != null && request.auth.uid == uid;
+  }
+  match /users/{uid}/emails/{emailId} {
+    allow read, write: if request.auth != null && request.auth.uid == uid;
+  }
   ```
 
-  Land this in the same PR. If rules are managed out-of-band, flag it to Mary in the PR body.
+  Land this in the same PR. If rules are managed out-of-band, flag it to Mary in the PR body. The `emails` subcollection is new in Phase 6 (see Task 7.5 and the Scope-Check section above); if Phase 2 later takes ownership of it, leave the rule in place.
 - [ ] **P5. No new env vars.** `OPENAI_API_KEY`, `TOKEN_ENCRYPTION_KEY`, `FIREBASE_ADMIN_SA_JSON`, and the Google OAuth triplet are all reused.
 - [ ] **P6. Create the working branch.** Run `git checkout -b feature/inbox-phase-6-reply`.
 
@@ -964,6 +986,201 @@ git commit -m "feat(inbox): AI reply-draft generator with Life Graph context"
 
 ---
 
+### Task 7.5: Persist digest results to Firestore (email cache)
+
+**Why this task exists:** See the "Scope-Check vs. Original Brief" section above. The `sendReply` and `draftReply` mutations must not accept `accountId` from the client; they derive it from the email's stored record. Phase 2's `inboxRouter.digest` currently returns emails transiently, so Phase 6 introduces a minimal Firestore cache at `users/{uid}/emails/{emailId}` and teaches `digest` to write into it. If a future phase migrates this ownership, move the cache there and update the read path.
+
+**Files:**
+- Create: `src/lib/server/email-cache.ts`
+- Create: `tests/server/email-cache.test.ts`
+- Modify: `src/server/trpc/routers/inbox.ts` — `digest` writes each returned email to the cache as a side effect
+
+- [ ] **Step 1: Confirm Phase 2 does not already persist emails**
+
+Run: `grep -n "emails/{emailId}\|users/.*/emails\|putEmailCache" src/lib/server/ src/server/trpc/routers/ 2>/dev/null || true`
+
+Expected: no matches (Phase 2's digest is transient). If there IS an existing email-persistence module, stop and adapt the later tasks to read from it — delete this task and reuse the existing helper; the only invariant that matters is that `getEmailCache(uid, emailId)` returns `{ accountId, threadId, subject, sender, fullBody }` at minimum.
+
+- [ ] **Step 2: Write the failing test**
+
+Create `tests/server/email-cache.test.ts`:
+
+```ts
+import { putEmailCache, getEmailCache } from '@/lib/server/email-cache'
+import { getAdminDb } from '@/lib/server/firebase-admin'
+
+jest.mock('@/lib/server/firebase-admin')
+
+const makeFakeDb = () => {
+  const docs = new Map<string, Record<string, unknown>>()
+  const mkDoc = (id: string) => ({
+    id,
+    get: async () => ({ exists: docs.has(id), id, data: () => docs.get(id) }),
+    set: async (d: Record<string, unknown>, opts?: { merge?: boolean }) => {
+      docs.set(id, opts?.merge ? { ...(docs.get(id) ?? {}), ...d } : d)
+    },
+  })
+  const col = { doc: (id: string) => mkDoc(id) }
+  return {
+    db: { collection: () => ({ doc: () => ({ collection: () => col }) }) },
+    docs,
+  }
+}
+
+describe('email-cache', () => {
+  beforeEach(() => {
+    const { db } = makeFakeDb()
+    ;(getAdminDb as jest.Mock).mockReturnValue(db)
+  })
+
+  it('round-trips put → get', async () => {
+    await putEmailCache('uid-1', {
+      id: 'm1',
+      accountId: 'a1',
+      threadId: 't1',
+      subject: 'Dinner Saturday',
+      sender: 'Doug <doug@example.com>',
+      fullBody: 'Saturday?',
+      date: 1_745_000_000_000,
+    })
+    const rec = await getEmailCache('uid-1', 'm1')
+    expect(rec).toMatchObject({
+      id: 'm1',
+      accountId: 'a1',
+      threadId: 't1',
+      subject: 'Dinner Saturday',
+      sender: 'Doug <doug@example.com>',
+      fullBody: 'Saturday?',
+    })
+  })
+
+  it('returns null when no record exists', async () => {
+    const rec = await getEmailCache('uid-1', 'missing')
+    expect(rec).toBeNull()
+  })
+})
+```
+
+- [ ] **Step 3: Run to verify failure**
+
+Run: `npx jest tests/server/email-cache.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 4: Implement**
+
+Create `src/lib/server/email-cache.ts`:
+
+```ts
+import { getAdminDb } from './firebase-admin'
+
+export interface CachedEmail {
+  id: string
+  accountId: string
+  threadId: string
+  subject: string
+  sender: string
+  fullBody: string
+  date: number
+}
+
+function col(uid: string) {
+  return getAdminDb().collection('users').doc(uid).collection('emails')
+}
+
+export async function putEmailCache(uid: string, email: CachedEmail): Promise<void> {
+  await col(uid).doc(email.id).set({ ...email, updatedAt: Date.now() }, { merge: true })
+}
+
+export async function getEmailCache(uid: string, emailId: string): Promise<CachedEmail | null> {
+  const snap = await col(uid).doc(emailId).get()
+  if (!snap.exists) return null
+  const data = snap.data() as Partial<CachedEmail> | undefined
+  if (!data?.accountId || !data.threadId) return null
+  return {
+    id: data.id ?? emailId,
+    accountId: data.accountId,
+    threadId: data.threadId,
+    subject: data.subject ?? '',
+    sender: data.sender ?? '',
+    fullBody: data.fullBody ?? '',
+    date: data.date ?? 0,
+  }
+}
+```
+
+- [ ] **Step 5: Run to verify pass**
+
+Run: `npx jest tests/server/email-cache.test.ts`
+Expected: PASS (2 tests).
+
+- [ ] **Step 6: Teach `digest` to write the cache**
+
+Open `src/server/trpc/routers/inbox.ts`. In the `digest` procedure, after the final `digested` array is built and before the return, add a fire-and-forget write for each email. The write must include `accountId` (already stamped in Phase 2) and `threadId` (already present on the raw Gmail message — Phase 2 carries it through; if not, pull it from the raw fetch result).
+
+Add this import at the top of the file:
+
+```ts
+import { putEmailCache } from '@/lib/server/email-cache'
+```
+
+Insert just before `return { emails: digested }`:
+
+```ts
+// Persist each email so sendReply/draftReply can resolve accountId + threadId
+// server-side without the client carrying that infrastructure knowledge.
+// Fire-and-forget is safe here: a miss on read falls through to the client-
+// provided emailId and the mutation will 404, which the UI already handles.
+await Promise.all(digested.map(e =>
+  putEmailCache(ctx.uid, {
+    id: e.id,
+    accountId: e.accountId,
+    threadId: e.threadId,
+    subject: e.subject,
+    sender: e.sender,
+    fullBody: e.fullBody,
+    date: e.date,
+  }).catch(() => { /* log-and-swallow; see rationale above */ })
+))
+```
+
+If Phase 2's `digested` email shape does not expose `threadId`, extend the digest output type to include it (the raw Gmail message carries `threadId` — it's a one-line additive change in the Phase 2 mapper). Do this in a small, isolated commit so it can be reviewed independently.
+
+- [ ] **Step 7: Extend the Phase 2 digest test**
+
+Open `tests/server/trpc/routers/inbox.test.ts` (or whatever the digest test file is named — check with `ls tests/server/trpc/routers/`). Add a test that asserts `putEmailCache` is called for each returned email with the correct `accountId` and `threadId`:
+
+```ts
+import { putEmailCache } from '@/lib/server/email-cache'
+jest.mock('@/lib/server/email-cache')
+
+// …inside the existing describe('inboxRouter.digest') block:
+it('persists each returned email to the cache with accountId + threadId', async () => {
+  const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+  await caller.digest()
+  expect(putEmailCache).toHaveBeenCalledWith('mary-uid', expect.objectContaining({
+    id: expect.any(String),
+    accountId: 'a1',
+    threadId: expect.any(String),
+  }))
+})
+```
+
+Re-run the full digest test file; all existing tests must still pass.
+
+- [ ] **Step 8: Run to verify pass**
+
+Run: `npx jest tests/server/email-cache.test.ts tests/server/trpc/routers/inbox.test.ts`
+Expected: all tests pass (including the new cache-write assertion).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/lib/server/email-cache.ts tests/server/email-cache.test.ts src/server/trpc/routers/inbox.ts tests/server/trpc/routers/inbox.test.ts
+git commit -m "feat(inbox): persist digest emails to Firestore for server-side accountId lookup"
+```
+
+---
+
 ### Task 8: tRPC `inboxRouter.draftReply` + `inboxRouter.sendReply`
 
 Wire everything together. Both procedures are mutations (side-effectful: either OpenAI spend or an actual send). `draftReply` returns `{ body, stored }` (the stored body, persisted on the email's action). `sendReply` returns `{ googleMessageId, threadId }` and honors the Phase 4 idempotency contract.
@@ -1070,7 +1287,7 @@ import { getReplyCommit, putReplyCommit } from '@/lib/server/reply-commits'
 import { generateReplyDraft } from '@/lib/server/draft-reply'
 import { listProfiles } from '@/lib/server/profiles'
 import { persistSuggestedDraft } from '@/lib/server/reply-storage'
-import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
+import { getEmailCache } from '@/lib/server/email-cache'
 
 jest.mock('@/lib/server/accounts')
 jest.mock('@/lib/server/google-oauth')
@@ -1080,7 +1297,7 @@ jest.mock('@/lib/server/reply-commits')
 jest.mock('@/lib/server/draft-reply')
 jest.mock('@/lib/server/profiles')
 jest.mock('@/lib/server/reply-storage')
-jest.mock('@/lib/server/gmail-fetcher')
+jest.mock('@/lib/server/email-cache')
 
 const maryAccount = {
   id: 'a1', email: 'mary.mckee@tribe.ai', refreshToken: 'enc', scopes: [
@@ -1088,6 +1305,16 @@ const maryAccount = {
     'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/gmail.modify',
   ], addedAt: 1,
+}
+
+const cachedEmail = {
+  id: 'm1',
+  accountId: 'a1',
+  threadId: 'thread-xyz',
+  subject: 'Dinner Saturday',
+  sender: 'Doug <doug@example.com>',
+  fullBody: 'Saturday?',
+  date: 1,
 }
 
 const threadHeaders = {
@@ -1108,13 +1335,13 @@ describe('inboxRouter.sendReply', () => {
     ;(sendRawReply as jest.Mock).mockResolvedValue({ id: 'sent-abc', threadId: 'thread-xyz' })
     ;(getReplyCommit as jest.Mock).mockResolvedValue(null)
     ;(putReplyCommit as jest.Mock).mockResolvedValue(undefined)
+    ;(getEmailCache as jest.Mock).mockResolvedValue(cachedEmail)
   })
 
   it('sends a reply and persists the commit record', async () => {
     const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
     const result = await caller.sendReply({
       emailId: 'm1',
-      accountId: 'a1',
       actionId: 'a1',
       body: 'Saturday works — Mary',
     })
@@ -1125,6 +1352,23 @@ describe('inboxRouter.sendReply', () => {
     }))
   })
 
+  it('resolves accountId from the Firestore email cache, not the client input', async () => {
+    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    await caller.sendReply({ emailId: 'm1', actionId: 'a1', body: 'Hi' })
+    expect(getEmailCache).toHaveBeenCalledWith('mary-uid', 'm1')
+    expect(getAccount).toHaveBeenCalledWith('mary-uid', 'a1')
+    expect(getDecryptedRefreshToken).toHaveBeenCalledWith('mary-uid', 'a1')
+  })
+
+  it('throws NOT_FOUND when the email is not in the cache', async () => {
+    ;(getEmailCache as jest.Mock).mockResolvedValue(null)
+    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    await expect(caller.sendReply({
+      emailId: 'missing', actionId: 'a1', body: 'Body',
+    })).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect(sendRawReply).not.toHaveBeenCalled()
+  })
+
   it('returns the existing googleMessageId on idempotent retry without re-sending', async () => {
     ;(getReplyCommit as jest.Mock).mockResolvedValue({
       googleMessageId: 'sent-abc',
@@ -1133,7 +1377,7 @@ describe('inboxRouter.sendReply', () => {
     })
     const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
     const result = await caller.sendReply({
-      emailId: 'm1', accountId: 'a1', actionId: 'a1', body: 'Saturday works — Mary',
+      emailId: 'm1', actionId: 'a1', body: 'Saturday works — Mary',
     })
     expect(result).toEqual({ googleMessageId: 'sent-abc', threadId: 'thread-xyz' })
     expect(sendRawReply).not.toHaveBeenCalled()
@@ -1145,7 +1389,7 @@ describe('inboxRouter.sendReply', () => {
       .mockResolvedValueOnce({ id: 'sent-abc', threadId: 'thread-xyz' })
     const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
     const result = await caller.sendReply({
-      emailId: 'm1', accountId: 'a1', actionId: 'a1', body: 'Body',
+      emailId: 'm1', actionId: 'a1', body: 'Body',
     })
     expect(result.googleMessageId).toBe('sent-abc')
     expect(sendRawReply).toHaveBeenCalledTimes(2)
@@ -1158,14 +1402,14 @@ describe('inboxRouter.sendReply', () => {
     )
     const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
     await expect(caller.sendReply({
-      emailId: 'm1', accountId: 'a1', actionId: 'a1', body: 'Body',
+      emailId: 'm1', actionId: 'a1', body: 'Body',
     })).rejects.toMatchObject({ code: 'FORBIDDEN' })
   })
 
   it('rejects unauthenticated callers', async () => {
     const caller = inboxRouter.createCaller({})
     await expect(caller.sendReply({
-      emailId: 'm1', accountId: 'a1', actionId: 'a1', body: 'Body',
+      emailId: 'm1', actionId: 'a1', body: 'Body',
     })).rejects.toBeInstanceOf(TRPCError)
   })
 
@@ -1176,7 +1420,7 @@ describe('inboxRouter.sendReply', () => {
     })
     const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
     await expect(caller.sendReply({
-      emailId: 'm1', accountId: 'a1', actionId: 'a1', body: 'Body',
+      emailId: 'm1', actionId: 'a1', body: 'Body',
     })).rejects.toMatchObject({ code: 'FORBIDDEN' })
     expect(sendRawReply).not.toHaveBeenCalled()
   })
@@ -1184,7 +1428,7 @@ describe('inboxRouter.sendReply', () => {
   it('includes In-Reply-To and References in the composed raw message', async () => {
     const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
     await caller.sendReply({
-      emailId: 'm1', accountId: 'a1', actionId: 'a1', body: 'Saturday works',
+      emailId: 'm1', actionId: 'a1', body: 'Saturday works',
     })
     const { raw } = (sendRawReply as jest.Mock).mock.calls[0][0]
     const decoded = Buffer.from(raw.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
@@ -1200,10 +1444,9 @@ describe('inboxRouter.draftReply', () => {
       { id: 'mary', name: 'Mary', type: 'Adult', currentContext: '', preferences: [], routines: [], sizes: {}, medicalNotes: '' },
       { id: 'doug', name: 'Doug', type: 'Adult', currentContext: '', preferences: ['brief'], routines: [], sizes: {}, medicalNotes: '' },
     ])
-    ;(fetchUnreadPrimary as jest.Mock).mockResolvedValue([
-      { id: 'm1', subject: 'Dinner Saturday', sender: 'Doug <doug@example.com>', fullBody: 'Saturday?', snippet: 's', date: 1 },
-    ])
+    ;(getEmailCache as jest.Mock).mockResolvedValue(cachedEmail)
     ;(listAccounts as jest.Mock).mockResolvedValue([maryAccount])
+    ;(getAccount as jest.Mock).mockResolvedValue(maryAccount)
     ;(getDecryptedRefreshToken as jest.Mock).mockResolvedValue('rt')
     ;(refreshAccessToken as jest.Mock).mockResolvedValue({ accessToken: 'at', expiresAt: 0 })
     ;(generateReplyDraft as jest.Mock).mockResolvedValue({ body: 'Saturday works — Mary' })
@@ -1213,7 +1456,7 @@ describe('inboxRouter.draftReply', () => {
   it('generates a draft and persists it', async () => {
     const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
     const result = await caller.draftReply({
-      emailId: 'm1', accountId: 'a1', actionId: 'a1',
+      emailId: 'm1', actionId: 'a1',
       action: { id: 'a1', type: 'NEEDS_REPLY', title: 'Re: Dinner', sourceQuote: 'Saturday?' },
       senderPersonId: 'doug',
     })
@@ -1221,10 +1464,32 @@ describe('inboxRouter.draftReply', () => {
     expect(persistSuggestedDraft).toHaveBeenCalledWith('mary-uid', 'm1', 'a1', 'Saturday works — Mary')
   })
 
+  it('resolves accountId from the Firestore email cache, not the client input', async () => {
+    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    await caller.draftReply({
+      emailId: 'm1', actionId: 'a1',
+      action: { id: 'a1', type: 'NEEDS_REPLY', title: 'Re: Dinner', sourceQuote: 'Saturday?' },
+      senderPersonId: 'doug',
+    })
+    expect(getEmailCache).toHaveBeenCalledWith('mary-uid', 'm1')
+    expect(getDecryptedRefreshToken).toHaveBeenCalledWith('mary-uid', 'a1')
+  })
+
+  it('throws NOT_FOUND when the email is not in the cache', async () => {
+    ;(getEmailCache as jest.Mock).mockResolvedValue(null)
+    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    await expect(caller.draftReply({
+      emailId: 'missing', actionId: 'a1',
+      action: { id: 'a1', type: 'NEEDS_REPLY', title: 'Re', sourceQuote: 'q' },
+      senderPersonId: null,
+    })).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect(generateReplyDraft).not.toHaveBeenCalled()
+  })
+
   it('rejects unauthenticated callers', async () => {
     const caller = inboxRouter.createCaller({})
     await expect(caller.draftReply({
-      emailId: 'm1', accountId: 'a1', actionId: 'a1',
+      emailId: 'm1', actionId: 'a1',
       action: { id: 'a1', type: 'NEEDS_REPLY', title: 'Re', sourceQuote: 'q' },
       senderPersonId: null,
     })).rejects.toBeInstanceOf(TRPCError)
@@ -1255,7 +1520,7 @@ import { getReplyCommit, putReplyCommit } from '@/lib/server/reply-commits'
 import { generateReplyDraft } from '@/lib/server/draft-reply'
 import { listProfiles } from '@/lib/server/profiles'
 import { persistSuggestedDraft } from '@/lib/server/reply-storage'
-import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
+import { getEmailCache } from '@/lib/server/email-cache'
 ```
 
 Add these inside the existing `router({ ... })` block alongside `digest`:
@@ -1264,7 +1529,6 @@ Add these inside the existing `router({ ... })` block alongside `digest`:
 sendReply: protectedProcedure
   .input(z.object({
     emailId: z.string().min(1),
-    accountId: z.string().min(1),
     actionId: z.string().min(1),
     body: z.string().min(1),
     subject: z.string().optional(),
@@ -1278,7 +1542,16 @@ sendReply: protectedProcedure
       return { googleMessageId: existing.googleMessageId, threadId: existing.threadId }
     }
 
-    const account = await getAccount(ctx.uid, input.accountId)
+    // Derive accountId + threadId from the server-side email cache rather than trusting the client.
+    const cached = await getEmailCache(ctx.uid, input.emailId)
+    if (!cached) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Email not found in cache. Refresh the inbox digest and try again.',
+      })
+    }
+
+    const account = await getAccount(ctx.uid, cached.accountId)
     if (!account) throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
     if (!account.scopes.includes('https://www.googleapis.com/auth/gmail.send')) {
       throw new TRPCError({
@@ -1287,7 +1560,7 @@ sendReply: protectedProcedure
       })
     }
 
-    const rt = await getDecryptedRefreshToken(ctx.uid, input.accountId)
+    const rt = await getDecryptedRefreshToken(ctx.uid, cached.accountId)
     if (!rt) throw new TRPCError({ code: 'FAILED_PRECONDITION', message: 'Missing refresh token' })
 
     const sendOnce = async (): Promise<{ id: string; threadId: string }> => {
@@ -1301,21 +1574,10 @@ sendReply: protectedProcedure
         inReplyTo: hdrs.messageIdHeader,
         references: hdrs.referencesHeader,
       })
-      // Gmail uses the threadId on the original email; we pass it straight through.
-      // We fetch it implicitly through `threadId` on the messages.get call; to keep
-      // a single round-trip, ask Gmail via the thread-headers endpoint (payload.threadId).
-      // fetchThreadHeaders returns subject/from/message-id/references but not threadId;
-      // we'd have to re-query. Cheaper: use the original emailId's threadId directly —
-      // the inbox store has it. For now, fetch it here.
-      const threadRes = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${input.emailId}?format=metadata&fields=threadId`,
-        { headers: { Authorization: `Bearer ${accessToken}` } },
-      )
-      const threadBody = await threadRes.json()
-      if (!threadRes.ok || !threadBody.threadId) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Could not resolve threadId' })
-      }
-      return sendRawReply({ accessToken, raw, threadId: threadBody.threadId })
+      // `threadId` comes straight from the cached email — the digest side-effect
+      // in Task 7.5 stores it alongside `accountId` so this mutation avoids any
+      // extra Gmail round-trip just to resolve the thread.
+      return sendRawReply({ accessToken, raw, threadId: cached.threadId })
     }
 
     let result: { id: string; threadId: string }
@@ -1345,7 +1607,6 @@ sendReply: protectedProcedure
 draftReply: protectedProcedure
   .input(z.object({
     emailId: z.string().min(1),
-    accountId: z.string().min(1),
     actionId: z.string().min(1),
     action: z.object({
       id: z.string().min(1),
@@ -1356,18 +1617,28 @@ draftReply: protectedProcedure
     senderPersonId: z.string().nullable(),
   }))
   .mutation(async ({ ctx, input }) => {
-    const rt = await getDecryptedRefreshToken(ctx.uid, input.accountId)
+    const cached = await getEmailCache(ctx.uid, input.emailId)
+    if (!cached) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Email not found in cache. Refresh the inbox digest and try again.',
+      })
+    }
+
+    const rt = await getDecryptedRefreshToken(ctx.uid, cached.accountId)
     if (!rt) throw new TRPCError({ code: 'FAILED_PRECONDITION', message: 'Missing refresh token' })
-    const { accessToken } = await refreshAccessToken(rt)
-    const [profiles, raws] = await Promise.all([
-      listProfiles(ctx.uid),
-      fetchUnreadPrimary(accessToken),
-    ])
-    const email = raws.find(r => r.id === input.emailId)
-    if (!email) throw new TRPCError({ code: 'NOT_FOUND', message: 'Email not found' })
+    // Note: `refreshAccessToken` is only needed here if the drafter itself makes a Gmail call.
+    // `generateReplyDraft` is pure-LLM and doesn't hit Gmail, so we skip the refresh to save a round-trip.
+    // Keep the refresh-token lookup as a hard precondition so an un-linked account fails cleanly.
+    const profiles = await listProfiles(ctx.uid)
 
     const { body } = await generateReplyDraft({
-      email: { id: email.id, subject: email.subject, sender: email.sender, fullBody: email.fullBody },
+      email: {
+        id: cached.id,
+        subject: cached.subject,
+        sender: cached.sender,
+        fullBody: cached.fullBody,
+      },
       action: input.action,
       profiles,
       senderPersonId: input.senderPersonId,
@@ -1378,15 +1649,17 @@ draftReply: protectedProcedure
   }),
 ```
 
-Notes on the `sendOnce` design:
-- Calls `refreshAccessToken` inside `sendOnce` so a 401 retry naturally gets a fresh token.
-- Fetches `threadId` via a tiny second Gmail call; this avoids expanding the `fetchThreadHeaders` return shape and keeps that function's contract focused.
-- Never calls `sendRawReply` more than twice.
+Notes on the design:
+- Both procedures derive `accountId` from the Firestore email cache written by Task 7.5's `digest` side-effect. The client never passes `accountId` — the server is the authoritative source.
+- `sendOnce` calls `refreshAccessToken` inside itself so a 401 retry naturally gets a fresh token.
+- `threadId` comes from the cache, not a second Gmail call — the digest has already fetched it once.
+- `sendRawReply` is never called more than twice.
+- `draftReply` reads the email body from the cache rather than re-fetching from Gmail, so it is safe to run even if `gmail.readonly` scope is briefly unavailable (the LLM call is all that matters).
 
 - [ ] **Step 7: Run to verify pass**
 
 Run: `npx jest tests/server/reply-storage.test.ts tests/server/trpc/routers/inbox-reply.test.ts`
-Expected: PASS (2 tests in reply-storage + 8 tests across sendReply/draftReply = 10 total).
+Expected: PASS (2 tests in reply-storage + 12 tests across sendReply/draftReply = 14 total).
 
 - [ ] **Step 8: Full server suite**
 
@@ -1573,11 +1846,21 @@ describe('<ReplyCard />', () => {
     await waitFor(() => {
       expect(__sendReplyMutate).toHaveBeenCalledWith(expect.objectContaining({
         emailId: 'm1',
-        accountId: 'a1',
         actionId: 'a1',
         body: 'Saturday 7pm. Mary',
       }))
     })
+  })
+
+  it('does NOT pass accountId to sendReply (server resolves it from the cache)', async () => {
+    const { __sendReplyMutate } = jest.requireMock('@/lib/trpc/client') as { __sendReplyMutate: jest.Mock }
+    render(<Wrapper><ReplyCard email={baseEmail} action={baseAction} /></Wrapper>)
+    fireEvent.click(screen.getByRole('button', { name: /Send reply/i }))
+    await waitFor(() => {
+      expect(__sendReplyMutate).toHaveBeenCalled()
+    })
+    const payload = __sendReplyMutate.mock.calls[0][0] as Record<string, unknown>
+    expect(payload).not.toHaveProperty('accountId')
   })
 
   it('disables Send and shows a tooltip when the account lacks gmail.send', () => {
@@ -1608,10 +1891,11 @@ describe('<ReplyCard />', () => {
     await waitFor(() => {
       expect(__draftReplyMutate).toHaveBeenCalledWith(expect.objectContaining({
         emailId: 'm1',
-        accountId: 'a1',
         actionId: 'a1',
         senderPersonId: 'doug',
       }))
+      const payload = __draftReplyMutate.mock.calls[0][0] as Record<string, unknown>
+      expect(payload).not.toHaveProperty('accountId')
     })
   })
 })
@@ -1668,12 +1952,14 @@ export function ReplyCard({ email, action, onCommitted }: Props) {
   }, [])
 
   async function runDraftAgain() {
-    if (!email.accountId) return
+    // `email.accountId` is only used client-side for the scope-check lookup above.
+    // The mutation itself does NOT carry accountId — the server resolves it from
+    // the Firestore email cache. See the "Scope-Check vs. Original Brief" section
+    // of the Phase 6 plan.
     setErrorMessage(null)
     try {
       const res = await draftReply.mutateAsync({
         emailId: email.id,
-        accountId: email.accountId,
         actionId: action.id,
         action: {
           id: action.id,
@@ -1690,13 +1976,12 @@ export function ReplyCard({ email, action, onCommitted }: Props) {
   }
 
   async function runSend() {
-    if (!email.accountId || !canSend) return
+    if (!canSend) return
     setPhase('writing')
     setErrorMessage(null)
     try {
       const res = await sendReply.mutateAsync({
         emailId: email.id,
-        accountId: email.accountId,
         actionId: action.id,
         body,
       })
@@ -1789,7 +2074,7 @@ export function ReplyCard({ email, action, onCommitted }: Props) {
 - [ ] **Step 4: Run to verify pass**
 
 Run: `npx jest tests/components/inbox/reply-card.test.tsx`
-Expected: PASS (4 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -1986,15 +2271,16 @@ Manual smoke:
 ```bash
 gh pr create --title "Inbox Phase 6: AI-drafted reply via gmail.send" --body "$(cat <<'EOF'
 ## Summary
-- Adds `inboxRouter.sendReply` and `inboxRouter.draftReply` tRPC mutations
+- Adds `inboxRouter.sendReply` and `inboxRouter.draftReply` tRPC mutations — client inputs are `{ emailId, actionId, body, subject?, to? }` / `{ emailId, actionId, action, senderPersonId }`; the server derives `accountId` from a new per-user email cache rather than trusting the client
+- Adds `users/{uid}/emails/{emailId}` Firestore cache, written as a side effect of `digest` and read by the reply mutations
 - Adds `mimetext`-based RFC 2822 composer with `In-Reply-To` / `References` headers so replies thread in Gmail
 - Adds editable `<ReplyCard />` mounted into the Phase 3 Action deck for `NEEDS_REPLY` emails
 - Handles the scope-denied path gracefully — Send disables and offers a Re-link CTA when the account lacks `gmail.send`
 - Idempotency: retries of `${emailId}:${actionId}` return the existing `googleMessageId` instead of double-sending
 
 ## Test plan
-- [ ] Server unit tests pass (`compose-reply`, `gmail-sender`, `gmail-thread-headers`, `reply-commits`, `reply-storage`, `draft-reply`, `inbox-reply` router)
-- [ ] Component tests pass (`<ReplyCard />` render + send + draft + scope-denied)
+- [ ] Server unit tests pass (`email-cache`, `compose-reply`, `gmail-sender`, `gmail-thread-headers`, `reply-commits`, `reply-storage`, `draft-reply`, `inbox-reply` router — including the "resolves accountId from cache" + "NOT_FOUND when cache miss" cases)
+- [ ] Component tests pass (`<ReplyCard />` render + send + draft + scope-denied; verify the mutation payloads do NOT include `accountId`)
 - [ ] Manual: send a real reply, confirm it threads in Gmail
 - [ ] Manual: retry the same send; confirm no duplicate in Sent
 - [ ] Manual: unlink + re-link an account without `gmail.send`; confirm UI degrades
@@ -2009,12 +2295,13 @@ EOF
 Before handing off to the next phase:
 
 1. `npx tsc --noEmit` — clean.
-2. `npx jest` — full suite green, including the new 10+ tests added in Tasks 3–10.
+2. `npx jest` — full suite green, including the 16+ new tests added in Tasks 3–10 (email-cache, reply-storage, reply-commits, draft-reply, compose-reply, gmail-sender, gmail-thread-headers, reply-scope, inbox-reply router tests, and the ReplyCard component tests).
 3. `npm run lint` — clean.
 4. Manual smoke from Task 13 Step 2 — all ✅.
 5. Firestore contains:
    - `users/{uid}/replyCommits/{emailId}:{actionId}` with `googleMessageId`, `threadId`, `sentAt` for each successful send
    - `users/{uid}/replyDrafts/{emailId}:{actionId}` with the last-generated `body` for each draft
+   - `users/{uid}/emails/{emailId}` with `accountId`, `threadId`, `subject`, `sender`, `fullBody`, `date` for every email returned by the most recent `digest` (new in Task 7.5 — see the Scope-Check section)
 
 ## What's Next
 

@@ -4,9 +4,9 @@
 
 **Goal:** Replace the existing accordion-heavy `Bouncer` widget on the home page with a compact vertical list that mirrors the Phase 3 `/inbox` Queue — colored sender-identity dots, `ORG · PERSON` labels, action-type badges (CAL, TODO, REPLY, PDF), a featured row with dark left border, and a footer that deep-links to `/inbox?thread={id}`. The widget shares the `trpc.inbox.digest.useQuery()` cache with `/inbox`, so clearing an email there auto-updates the home page.
 
-**Architecture:** `Bouncer` becomes a pure presentational component fed by a single `trpc.inbox.digest.useQuery()` hook (identical args to `/inbox`, so the query key and cache entry are shared by react-query). Top 3 items (sorted chronologically, `NEWSLETTER` classification excluded) render as compact rows. The last-selected-in-`/inbox` email is marked "featured" via a tiny shared Zustand-style slice in the existing `store.tsx` (`lastSelectedEmailId`). Badges derive from `email.suggestedActions[].type` plus `email.attachments.length`. Footer link uses `/inbox?thread={featuredId}`, and `/inbox` reads the `?thread=` query param on mount to select that email. No new server routes, no data-model changes.
+**Architecture:** `Bouncer` becomes a pure presentational component fed by a single `trpc.inbox.digest.useQuery()` hook (identical args to `/inbox`, so the query key and cache entry are shared by react-query). Top 3 items (sorted chronologically, `NEWSLETTER` classification excluded) render as compact rows. The last-selected-in-`/inbox` email is marked "featured" via a tiny shared Zustand-style slice in the existing `store.tsx` (`lastSelectedEmailId`). Badges derive from `email.suggestedActions[].type` plus `email.attachments.length`. Footer link uses `/inbox?thread={featuredId}`; the matching `/inbox` deep-link handler that reads `?thread=` on mount is owned by the Phase 3 plan (see Prerequisites). No new server routes, no data-model changes.
 
-**Tech Stack:** Next.js 16 (App Router), React 19, tRPC v11 React bindings, TanStack Query v5, Tailwind v4, React Testing Library + Jest (jsdom env), `lucide-react` for iconography, `next/link` + `next/navigation` (`useSearchParams`) for deep-linking.
+**Tech Stack:** Next.js 16 (App Router), React 19, tRPC v11 React bindings, TanStack Query v5, Tailwind v4, React Testing Library + Jest (jsdom env), `lucide-react` for iconography, `next/link` for deep-link hrefs.
 
 **Base branch:** Branch `inbox/phase-7-home-widget` off of the tip that has Phase 2 (`inboxRouter.digest` returning the new `Email` shape with `classification`, `senderIdentity`, `attachments`, enriched `suggestedActions`) and Phase 3 (`/inbox` Queue redesign, color-coded sender-identity dots) merged. If Phase 3 has not merged yet, rebase onto the Phase 2 tip and replicate the Phase 3 `senderIdentityColor` helper inline in this phase — see Task 2.
 
@@ -14,10 +14,9 @@
 
 ## Before You Start — Read These
 
-The home page is a Next.js 16 App Router page that imports `Bouncer` from `src/components/widgets/bouncer.tsx`. This phase introduces jsdom-based component tests (the repo currently only has node-env tests), and deep-linking via `useSearchParams` in a client component. Read BEFORE writing code:
+The home page is a Next.js 16 App Router page that imports `Bouncer` from `src/components/widgets/bouncer.tsx`. This phase introduces jsdom-based component tests (the repo currently only has node-env tests). Read BEFORE writing code:
 
 - `node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md` — not directly used, but confirms there's no change to routing.
-- `node_modules/next/dist/docs/01-app/02-api-reference/04-functions/use-search-params.md` — the App Router `useSearchParams` hook we'll use to read `?thread=` in `/inbox`.
 - `node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md` — breaking changes vs training data.
 - `https://tanstack.com/query/v5/docs/framework/react/guides/query-keys` — shared cache semantics. `trpc.inbox.digest.useQuery(undefined, opts)` with identical input always hits the same cache entry across components. We rely on this.
 - `https://trpc.io/docs/client/react` — `trpc.*.useQuery()` + `useUtils().invalidate()` patterns.
@@ -40,7 +39,6 @@ If any doc conflicts with this plan, follow the docs and update the plan.
 
 ### Modified files
 - `src/components/widgets/bouncer.tsx` — full rewrite. Replaces the existing accordion-based shell with the compact list.
-- `src/app/inbox/page.tsx` — read `?thread=` on mount via `useSearchParams`; seed `selectedId` with it if present in `emails`. Persist last-selected id to `useHub().setLastSelectedEmailId(id)` so the widget can highlight the featured row.
 - `src/lib/store.tsx` — add `lastSelectedEmailId: string | null` state + `setLastSelectedEmailId(id: string | null)` setter to the `HubContext` / `useHub()` shape. No server calls.
 - `jest.config.mjs` — split test envs so component tests (`**/tests/components/**`) run in `jsdom` while existing server tests keep `node`. See Task 0.
 - `package.json` — add `@testing-library/jest-dom` matchers to `setupFilesAfterEach` (already a devDep) and add `whatwg-fetch` shim if jsdom complains about `Request`. See Task 0.
@@ -48,6 +46,7 @@ If any doc conflicts with this plan, follow the docs and update the plan.
 ### Explicitly NOT touched
 - `src/server/trpc/routers/inbox.ts` — widget reuses `inbox.digest` as-is.
 - `src/app/api/trpc/[trpc]/route.ts` — no server changes.
+- `src/app/inbox/page.tsx` — the deep-link handler (reading `?thread=` from the URL via `useSearchParams`) is owned by the Phase 3 plan (`docs/superpowers/plans/2026-04-21-inbox-phase-3-ui-redesign.md`, Task 12) and assumed to be in place before Phase 7 ships. Phase 7 only constructs the `/inbox?thread={id}` href; it does not consume it.
 - Phase 3 Queue component — if Phase 3 already exports a `senderIdentityColor` helper under `src/lib/sender-identity-color.ts`, REUSE it instead of re-creating; see Task 2 Step 1.
 
 ---
@@ -61,6 +60,8 @@ If any doc conflicts with this plan, follow the docs and update the plan.
 - [ ] **P3. Create the working branch.** Run `git checkout -b inbox/phase-7-home-widget`.
 
 - [ ] **P4. Sanity-check the existing widget shape.** Open `src/components/widgets/bouncer.tsx` and `src/app/page.tsx`. Confirm the current widget takes `className?: string` and is mounted inside `<div className="lg:col-span-4 flex flex-col h-full min-h-0">`. The rewrite must preserve that API (one `className` prop, fills height).
+
+- [ ] **P5. Confirm the `/inbox` deep-link handler is in place.** The `/inbox` page deep-link handler (reading `?thread=` from the URL) is owned by the Phase 3 plan (`docs/superpowers/plans/2026-04-21-inbox-phase-3-ui-redesign.md`, Task 12) and assumed to be in place before Phase 7 ships. Verify by opening `src/app/inbox/page.tsx` and confirming it imports `useSearchParams` from `next/navigation` and seeds `selectedId` from `?thread=` when present. If it does not, pause Phase 7 and finish that Phase 3 task first — Phase 7's footer link (`/inbox?thread={id}`) and the manual smoke in Task 7 Step 2 depend on it.
 
 ---
 
@@ -908,165 +909,7 @@ git commit -m "feat(widget): rewrite Bouncer as compact list with shared trpc ca
 
 ---
 
-### Task 6: `/inbox` deep-link from `?thread=` query param
-
-`/inbox` currently seeds `selectedId` with `emails[0]?.id`. Extend it to read `?thread=` on mount and use that id if it's present in `emails`. Also wire `setLastSelectedEmailId` so the widget's featured row follows what `/inbox` had selected.
-
-Conceptually this belongs to Phase 3, but it's a small, tightly scoped addition required for this phase's footer link contract. Keep the diff minimal.
-
-**Files:**
-- Modify: `src/app/inbox/page.tsx`
-- Create: `tests/components/inbox/deep-link.test.tsx`
-
-- [ ] **Step 1: Write the failing test**
-
-Create `tests/components/inbox/deep-link.test.tsx`:
-
-```tsx
-import { render, screen } from '@testing-library/react'
-import InboxPage from '@/app/inbox/page'
-import { HubProvider, useHub } from '@/lib/store'
-import type { Email } from '@/lib/store'
-
-jest.mock('next/navigation', () => ({
-  useSearchParams: jest.fn(),
-}))
-import { useSearchParams } from 'next/navigation'
-
-jest.mock('@/lib/store', () => {
-  const actual = jest.requireActual('@/lib/store')
-  return {
-    ...actual,
-    useHub: jest.fn(),
-  }
-})
-import { useHub as useHubMock } from '@/lib/store'
-
-function mkEmail(id: string, subject: string): Email {
-  return {
-    id, subject, sender: 'x@y.z', classification: 'FYI',
-    snippet: '', fullBody: subject, attachments: [], suggestedActions: [],
-    date: 0, hubStatus: 'UNREAD',
-  } as Email
-}
-
-const emails: Email[] = [
-  mkEmail('e1', 'First'),
-  mkEmail('e2', 'Second'),
-  mkEmail('e3', 'Third'),
-]
-
-describe('/inbox deep-link via ?thread=', () => {
-  const setLastSelectedEmailId = jest.fn()
-
-  beforeEach(() => {
-    jest.clearAllMocks()
-    ;(useHubMock as unknown as jest.Mock).mockReturnValue({
-      emails,
-      actOnEmailAction: jest.fn(),
-      dismissEmailAction: jest.fn(),
-      lastSelectedEmailId: null,
-      setLastSelectedEmailId,
-    })
-  })
-
-  it('seeds selection with ?thread=e2 when it matches an email', () => {
-    ;(useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('thread=e2'))
-    render(<HubProvider><InboxPage /></HubProvider>)
-    expect(screen.getByText('Second')).toBeInTheDocument()
-    // Detail pane renders the selected email's subject in the header.
-    // Use getAllByText because the subject also appears in the queue row.
-    expect(screen.getAllByText('Second').length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('falls back to emails[0] when ?thread= is absent', () => {
-    ;(useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams(''))
-    render(<HubProvider><InboxPage /></HubProvider>)
-    // emails[0] is "First" — should be the selected subject.
-    expect(screen.getAllByText('First').length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('falls back to emails[0] when ?thread= does not match any email', () => {
-    ;(useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('thread=missing'))
-    render(<HubProvider><InboxPage /></HubProvider>)
-    expect(screen.getAllByText('First').length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('persists the selected id to setLastSelectedEmailId on mount', () => {
-    ;(useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('thread=e3'))
-    render(<HubProvider><InboxPage /></HubProvider>)
-    expect(setLastSelectedEmailId).toHaveBeenCalledWith('e3')
-  })
-})
-```
-
-- [ ] **Step 2: Run and watch it fail**
-
-Run: `npx jest tests/components/inbox/deep-link.test.tsx`
-Expected: FAIL — the current `/inbox` does not consume `useSearchParams` and does not call `setLastSelectedEmailId`.
-
-- [ ] **Step 3: Patch `/inbox/page.tsx`**
-
-Open `src/app/inbox/page.tsx`. Make these edits:
-
-1. Add the import near the top:
-
-```ts
-import { useSearchParams } from 'next/navigation'
-import { useEffect } from 'react'
-```
-
-(The file already imports `useState` from `react`; add `useEffect` alongside it.)
-
-2. Replace the existing `const { emails, ... } = useHub()` + `const [selectedId, setSelectedId] = useState...` block with:
-
-```tsx
-  const { emails, actOnEmailAction, dismissEmailAction, setLastSelectedEmailId } = useHub()
-  const searchParams = useSearchParams()
-  const threadParam = searchParams?.get('thread') ?? null
-
-  const initialId =
-    (threadParam && emails.find(e => e.id === threadParam)?.id) ||
-    emails[0]?.id ||
-    null
-
-  const [selectedId, setSelectedId] = useState<string | null>(initialId)
-
-  useEffect(() => {
-    if (selectedId) setLastSelectedEmailId(selectedId)
-  }, [selectedId, setLastSelectedEmailId])
-
-  useEffect(() => {
-    // If deep-link changed after mount (e.g., navigation from the home widget), pick it up.
-    if (threadParam && emails.some(e => e.id === threadParam) && threadParam !== selectedId) {
-      setSelectedId(threadParam)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadParam, emails])
-```
-
-Leave the rest of the component identical.
-
-- [ ] **Step 4: Confirm the tests pass**
-
-Run: `npx jest tests/components/inbox/deep-link.test.tsx`
-Expected: PASS (4 tests).
-
-- [ ] **Step 5: Confirm type-check + full suite**
-
-Run: `npx tsc --noEmit && npx jest`
-Expected: zero errors, all tests pass.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/app/inbox/page.tsx tests/components/inbox/deep-link.test.tsx
-git commit -m "feat(inbox): deep-link selection via ?thread= query param"
-```
-
----
-
-### Task 7: Cache invalidation — clearing in `/inbox` updates the widget
+### Task 6: Cache invalidation — clearing in `/inbox` updates the widget
 
 The widget and `/inbox` already share the same `trpc.inbox.digest.useQuery()` cache entry by virtue of identical input (`undefined`). Any mutation that calls `utils.inbox.digest.invalidate()` on success will cause both consumers to refetch. This task only adds a test that proves the cross-surface update, to guard against regressions (e.g., someone later adds a query-key arg to the widget and accidentally breaks sharing).
 
@@ -1159,7 +1002,7 @@ git commit -m "test(widget): Bouncer reacts to inbox.digest cache invalidation"
 
 ---
 
-### Task 8: Wire the new widget on the home page + smoke
+### Task 7: Wire the new widget on the home page + smoke
 
 The `Bouncer` component signature is unchanged (`className?: string`), so `src/app/page.tsx` does not need edits. But a quick manual smoke confirms everything hangs together in a real browser.
 
@@ -1202,12 +1045,12 @@ Manual smoke:
 
 ---
 
-### Task 9: Merge prep
+### Task 8: Merge prep
 
 - [ ] **Step 1: Rebase onto main if needed**
 
 Run: `git fetch origin && git rebase origin/main`
-Expected: no conflicts (no one else should be touching `bouncer.tsx` or `/inbox/page.tsx` concurrently). If conflicts in `/inbox/page.tsx` come from Phase 3, reconcile by keeping Phase 3's visuals and Phase 7's `useSearchParams` / `setLastSelectedEmailId` hooks.
+Expected: no conflicts (no one else should be touching `bouncer.tsx` or `store.tsx` concurrently). `src/app/inbox/page.tsx` is owned by Phase 3 in this phase and should not appear in the diff — if it does, investigate before continuing.
 
 - [ ] **Step 2: Final full suite**
 
@@ -1227,13 +1070,13 @@ gh pr create --title "Inbox Phase 7: home-page Bouncer widget redesign" --body "
 ## Summary
 - Rewrites the home-page Bouncer widget as a compact vertical list mirroring the Phase 3 /inbox Queue: colored sender-identity dot, ORG · PERSON, truncated subject, CAL/TODO/REPLY/PDF badges, featured row with dark left border.
 - Widget and /inbox share a single trpc.inbox.digest.useQuery() cache entry, so clearing an email anywhere propagates.
-- Adds /inbox deep-link via ?thread= query param and persists last-selected id to useHub() so the widget highlights the same email next visit.
+- Footer link builds /inbox?thread={id}; the matching deep-link handler on /inbox is owned by the Phase 3 plan. Adds lastSelectedEmailId to useHub() so the widget highlights the email /inbox had selected.
 - Splits Jest into node (server) and jsdom (components) projects.
 
 ## Test plan
 - [ ] npx tsc --noEmit
 - [ ] npx jest
-- [ ] Manual smoke per Task 8 Step 2
+- [ ] Manual smoke per Task 7 Step 2
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF
@@ -1247,7 +1090,7 @@ EOF
 1. `npx tsc --noEmit` — clean.
 2. `npx jest` — full suite green (server project + components project).
 3. `npm run lint` — clean.
-4. Manual smoke from Task 8 Step 2 — all ✅.
+4. Manual smoke from Task 7 Step 2 — all ✅.
 5. Network-tab check in the browser: loading the home page fires **one** `/api/trpc/inbox.digest` call (batched with whatever else the page needs). Navigating to `/inbox` does not fire a second `inbox.digest` call — the cache is hit.
 
 ## What's Next

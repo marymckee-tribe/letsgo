@@ -4,7 +4,9 @@
 
 **Goal:** Replace the hand-rolled `/calendar` weekly grid with a Schedule-X-powered page that supports day/week/month views, per-calendar visibility toggles, profile filtering in a side panel, a sorbet-themed look, and an event detail drawer with AI prep notes — all built on the new tRPC + TanStack Query baseline.
 
-**Architecture:** Schedule-X renders inside a `use client` boundary that consumes `trpc.calendar.list.useQuery()`. Per-calendar visibility lives on the `CalendarMapping` Firestore doc (`visible: boolean`, default `true`) and is set via `trpc.calendars.setVisibility.useMutation()`. The `calendar.list` procedure filters hidden-calendar events server-side. Profile filtering is client-side over already-fetched events. AI prep notes are generated on demand by a new `trpc.calendar.getPrepNotes` procedure that ports the prompt/schema from the deleted `/api/calendar/digest` route. Timezone-safe display uses `date-fns-tz` instead of the buggy `toLocaleTimeString` pattern.
+**Architecture:** Schedule-X renders inside a `use client` boundary that consumes `trpc.calendar.list.useQuery()`. Per-calendar visibility lives on the `CalendarMapping` Firestore doc (`visible: boolean`, default `true`) and is set via `trpc.calendars.setVisibility.useMutation()`. The `calendar.list` procedure filters hidden-calendar events server-side. Profile filtering is client-side over already-fetched events. All AI enrichment of calendar data — per-event prep notes for the drawer and per-day schedule insights for the home widget — is generated on demand by a single `trpc.calendar.getEventEnrichment` procedure that ports the prompt/schema from the deleted `/api/calendar/digest` route. Timezone-safe display uses `date-fns-tz` instead of the buggy `toLocaleTimeString` pattern.
+
+**Why one procedure for both enrichment shapes?** The per-event prep notes (drawer) and per-day schedule insights (home widget) share the same fetch pipeline, the same `generateObject` setup, and the same auth / visibility filtering. The only difference is the prompt body and which fields are populated in the response. Collapsing them into one procedure that accepts either `{ eventId }` or `{ dayISO }` and returns the unified shape `{ perEvent: { travelBuffer, prepSuggestion } | null, dailyInsights: string[] }` — with exactly one half populated per call — keeps the router surface small, makes the two callsites symmetrical, and means future enrichment additions (e.g. weekly digest) land in the same place. The discriminator is the input variant; the response shape is stable.
 
 **Tech Stack:** Next.js 16 (App Router), tRPC v11, TanStack Query v5, `@schedule-x/react`, `@schedule-x/calendar`, `@schedule-x/events-service`, `@schedule-x/theme-default`, `date-fns-tz`, Firestore + Admin SDK, Jest + ts-jest, Zod v4.
 
@@ -20,12 +22,12 @@ A previous version of this plan (`docs/superpowers/plans/2026-04-21-calendar-red
 |---|---|---|
 | Visibility write path | `PUT /api/calendars` accepts `visible` in body | `trpc.calendars.setVisibility.useMutation({ calendarId, visible })` |
 | Event fetch path | `POST /api/calendar/list` | `trpc.calendar.list.useQuery()` (filters hidden calendars server-side) |
-| AI prep notes | Old `/api/calendar/event-notes` route | New `trpc.calendar.getPrepNotes.useQuery({ eventId })` procedure — re-uses the `generateObject` prompt + schema from the deleted `/api/calendar/digest/route.ts` (recover from `git show HEAD~5:src/app/api/calendar/digest/route.ts`) |
+| AI enrichment (prep notes + home insights) | Old `/api/calendar/event-notes` and `/api/calendar/digest` routes — two separate endpoints | Single `trpc.calendar.getEventEnrichment.useQuery()` procedure accepting either `{ eventId }` (per-event prep notes) or `{ dayISO }` (per-day insights) — re-uses the `generateObject` prompt + schema from the deleted `/api/calendar/digest/route.ts` (recover from `git show HEAD~5:src/app/api/calendar/digest/route.ts`) |
 | Cache invalidation after visibility toggle | Manual component refetch | `trpc.useUtils().calendar.list.invalidate()` + `utils.calendars.list.invalidate()` |
 | Schedule-X mount | Client component (unchanged) | Client component inside explicit `"use client"` boundary per Next.js 16 conventions |
 | Settings UI | "Show" checkbox via manual fetch | "Show" checkbox wired through the tRPC mutation + utils invalidation |
 | Timezone handling | `toLocaleTimeString` (bug farm — wrong in DST, wrong across zones) | `date-fns-tz` `formatInTimeZone` / `toZonedTime` |
-| Home-page AI content regression fix | Option A: new `/api/calendar/insights` Route Handler | New `trpc.calendar.insights.useQuery()` procedure (same prompt shape) |
+| Home-page AI content regression fix | Option A: new `/api/calendar/insights` Route Handler | Consumes the merged `trpc.calendar.getEventEnrichment.useQuery({ dayISO })` procedure (no separate `calendar.insights`) |
 | Store integration | `useEffect + fetch` | Already-migrated `trpc.*.useQuery()` hooks in `src/lib/store.tsx` |
 
 Everything else (Schedule-X view set, filter sidebar, event detail drawer, sorbet theming, scope boundaries) carries over from v1 verbatim.
@@ -51,23 +53,22 @@ If the live docs conflict with code samples below, **follow the docs and update 
 ### New files
 - `src/components/calendar/calendar-app.tsx` — Schedule-X calendar wrapper (client component)
 - `src/components/calendar/filter-sidebar.tsx` — Vertical sidebar: profile filter + calendar visibility checkboxes
-- `src/components/calendar/event-detail-drawer.tsx` — Right-side drawer shown on event click; displays AI prep notes via `trpc.calendar.getPrepNotes.useQuery`
+- `src/components/calendar/event-detail-drawer.tsx` — Right-side drawer shown on event click; displays AI prep notes via `trpc.calendar.getEventEnrichment.useQuery({ eventId })`
 - `src/lib/datetime.ts` — thin wrappers around `date-fns-tz` (`formatInZone`, `toScheduleXDateTime`, `userTimeZone`)
 - `src/styles/schedule-x-theme.css` — CSS variable overrides theming Schedule-X to the sorbet palette
 - `tests/server/calendar-mappings.visibility.test.ts` — round-trip for the `visible` field (default `true`, explicit `false`, back-compat read)
 - `tests/server/trpc/routers/calendar.visibility.test.ts` — `calendar.list` filters events from hidden calendars
 - `tests/server/trpc/routers/calendars.setVisibility.test.ts` — `calendars.setVisibility` mutation persists the flag
-- `tests/server/trpc/routers/calendar.getPrepNotes.test.ts` — AI prep-notes procedure (mocked `generateObject`)
-- `tests/server/trpc/routers/calendar.insights.test.ts` — home-page insights procedure (mocked `generateObject`)
+- `tests/server/trpc/routers/calendar.getEventEnrichment.test.ts` — AI enrichment procedure (mocked `generateObject`); exercises both per-event and per-day input shapes
 - `tests/lib/datetime.test.ts` — `toScheduleXDateTime` correctness across zones
 
 ### Modified files
 - `src/lib/server/calendar-mappings.ts` — add `visible?: boolean` to `CalendarMapping`; persist with default `true`; coerce on read
 - `src/server/trpc/routers/calendars.ts` — existing `list` now emits `visible`; add `setVisibility({ calendarId, visible })` mutation
-- `src/server/trpc/routers/calendar.ts` — existing `list` filters events whose `calendarId` is in the hidden set; add `getPrepNotes({ eventId })` and `insights({ eventIds? })` procedures
+- `src/server/trpc/routers/calendar.ts` — existing `list` filters events whose `calendarId` is in the hidden set; add `getEventEnrichment({ eventId? , dayISO? })` procedure (one-of input; returns `{ perEvent, dailyInsights }`)
 - `src/components/settings/calendars-section.tsx` — add "Show" checkbox column wired to `trpc.calendars.setVisibility.useMutation`
 - `src/app/calendar/page.tsx` — replace the custom week grid with `<FilterSidebar />` + `<CalendarApp />` + `<EventDetailDrawer />`
-- `src/lib/store.tsx` — extend the `CalendarEvent` projection to carry `start: string` / `end: string` / `calendarId` / `calendarName` / `accountId` verbatim from `trpc.calendar.list`; wire `trpc.calendar.insights.useQuery()` into the home-widget enrichment slot
+- `src/lib/store.tsx` — extend the `CalendarEvent` projection to carry `start: string` / `end: string` / `calendarId` / `calendarName` / `accountId` verbatim from `trpc.calendar.list`; wire `trpc.calendar.getEventEnrichment.useQuery({ dayISO })` (today's ISO date) into the home-widget enrichment slot, reading `dailyInsights` off the response
 - `src/app/globals.css` — `@import` the new `schedule-x-theme.css`
 - `package.json` — add `date-fns`, `date-fns-tz`
 
@@ -592,13 +593,25 @@ git commit -m "feat(trpc): calendar.list filters events from hidden calendars"
 
 ---
 
-### Task 5: `calendar.getPrepNotes` procedure (re-implements the deleted digest)
+### Task 5: `calendar.getEventEnrichment` procedure (re-implements the deleted digest; covers both drawer prep notes and home insights)
 
-The old `/api/calendar/digest/route.ts` was deleted during the tRPC migration with the intent to replan the AI prep-notes feature. This task re-implements it as a per-event tRPC procedure. Recover the original prompt + schema from git: `git show HEAD~5:src/app/api/calendar/digest/route.ts` (adjust the `HEAD~5` offset as needed — use `git log --all --oneline -- src/app/api/calendar/digest/route.ts` to find the last commit that had the file).
+The old `/api/calendar/digest/route.ts` was deleted during the tRPC migration with the intent to replan both AI-enrichment surfaces: (a) per-event prep notes rendered in the event detail drawer, and (b) per-day schedule insights rendered in the home widget. Both share the same fetch pipeline and `generateObject` setup, so this task implements a **single** tRPC procedure that accepts either input shape and returns a unified response. Recover the original prompt + schema from git: `git show HEAD~5:src/app/api/calendar/digest/route.ts` (adjust the `HEAD~5` offset as needed — use `git log --all --oneline -- src/app/api/calendar/digest/route.ts` to find the last commit that had the file).
+
+**Input (one-of, enforced by Zod `.refine()`):**
+- `{ eventId: string }` — produces per-event prep notes
+- `{ dayISO: string }` — produces per-day schedule insights (ISO date, e.g. `'2026-04-23'`)
+
+**Output (stable shape, one half populated per call):**
+```ts
+{
+  perEvent: { travelBuffer: string | null; prepSuggestion: string | null } | null,
+  dailyInsights: string[],
+}
+```
 
 **Files:**
 - Modify: `src/server/trpc/routers/calendar.ts`
-- Create: `tests/server/trpc/routers/calendar.getPrepNotes.test.ts`
+- Create: `tests/server/trpc/routers/calendar.getEventEnrichment.test.ts`
 
 - [ ] **Step 1: Recover the original prompt**
 
@@ -614,11 +627,11 @@ Note the most recent commit hash that shows the file. Then run:
 git show <hash>:src/app/api/calendar/digest/route.ts > /tmp/old-digest.ts
 ```
 
-Read `/tmp/old-digest.ts`. Extract: (a) the Zod schema for the AI output, (b) the prompt template, (c) the `generateObject` call (model name + options).
+Read `/tmp/old-digest.ts`. Extract: (a) the Zod schema for the AI output, (b) the prompt template, (c) the `generateObject` call (model name + options). Both the per-event and per-day prompts below derive from this source.
 
 - [ ] **Step 2: Write the router test**
 
-Create `tests/server/trpc/routers/calendar.getPrepNotes.test.ts`:
+Create `tests/server/trpc/routers/calendar.getEventEnrichment.test.ts`:
 
 ```ts
 import { calendarRouter } from '@/server/trpc/routers/calendar'
@@ -637,7 +650,7 @@ jest.mock('ai', () => ({
 }))
 jest.mock('@ai-sdk/openai', () => ({ openai: jest.fn() }))
 
-describe('calendar.getPrepNotes', () => {
+describe('calendar.getEventEnrichment', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     ;(listAccounts as jest.Mock).mockResolvedValue([{ id: 'a1', email: 'mary@tribe.ai' }])
@@ -662,49 +675,88 @@ describe('calendar.getPrepNotes', () => {
     ])
   })
 
-  it('returns AI prep notes for the given event', async () => {
-    ;(aiModule.generateObject as jest.Mock).mockResolvedValue({
-      object: {
-        travelBuffer: 'Leave by 7:45 AM; 30 min drive with traffic.',
-        prepSuggestion: 'Bring insurance card and recent X-rays.',
-      },
+  describe('per-event shape ({ eventId })', () => {
+    it('returns perEvent populated and dailyInsights empty', async () => {
+      ;(aiModule.generateObject as jest.Mock).mockResolvedValue({
+        object: {
+          travelBuffer: 'Leave by 7:45 AM; 30 min drive with traffic.',
+          prepSuggestion: 'Bring insurance card and recent X-rays.',
+        },
+      })
+      const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+      const result = await caller.getEventEnrichment({ eventId: 'e1' })
+      expect(result.perEvent?.travelBuffer).toContain('7:45')
+      expect(result.perEvent?.prepSuggestion).toContain('insurance')
+      expect(result.dailyInsights).toEqual([])
     })
-    const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
-    const result = await caller.getPrepNotes({ eventId: 'e1' })
-    expect(result.travelBuffer).toContain('7:45')
-    expect(result.prepSuggestion).toContain('insurance')
-  })
 
-  it('throws NOT_FOUND when the event does not exist', async () => {
-    const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
-    await expect(caller.getPrepNotes({ eventId: 'nonexistent' })).rejects.toThrow(/NOT_FOUND|not found/i)
-  })
-
-  it('rejects unauthenticated callers', async () => {
-    const caller = calendarRouter.createCaller({})
-    await expect(caller.getPrepNotes({ eventId: 'e1' })).rejects.toThrow()
-  })
-
-  it('passes nearby events (same day, other events) into the prompt context', async () => {
-    const generateObject = aiModule.generateObject as jest.Mock
-    generateObject.mockResolvedValue({
-      object: { travelBuffer: null, prepSuggestion: null },
+    it('throws NOT_FOUND when the event does not exist', async () => {
+      const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+      await expect(caller.getEventEnrichment({ eventId: 'nonexistent' }))
+        .rejects.toThrow(/NOT_FOUND|not found/i)
     })
-    const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
-    await caller.getPrepNotes({ eventId: 'e1' })
-    const promptArg = generateObject.mock.calls[0][0].prompt as string
-    // The "Lunch" event shares the day and should be referenced so the AI can reason about travel buffers
-    expect(promptArg).toContain('Lunch')
+
+    it('passes nearby events (same day, other events) into the prompt context', async () => {
+      const generateObject = aiModule.generateObject as jest.Mock
+      generateObject.mockResolvedValue({
+        object: { travelBuffer: null, prepSuggestion: null },
+      })
+      const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+      await caller.getEventEnrichment({ eventId: 'e1' })
+      const promptArg = generateObject.mock.calls[0][0].prompt as string
+      // The "Lunch" event shares the day and should be referenced so the AI can reason about travel buffers
+      expect(promptArg).toContain('Lunch')
+    })
+  })
+
+  describe('per-day shape ({ dayISO })', () => {
+    it('returns dailyInsights populated and perEvent null', async () => {
+      ;(aiModule.generateObject as jest.Mock).mockResolvedValue({
+        object: {
+          insights: ['Your morning is clear — good block for deep work.'],
+        },
+      })
+      const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+      const result = await caller.getEventEnrichment({ dayISO: '2026-04-23' })
+      expect(result.dailyInsights).toEqual(['Your morning is clear — good block for deep work.'])
+      expect(result.perEvent).toBeNull()
+    })
+
+    it('returns empty dailyInsights when there are no events on that day', async () => {
+      const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+      const result = await caller.getEventEnrichment({ dayISO: '2030-01-01' })
+      expect(result.dailyInsights).toEqual([])
+      expect(result.perEvent).toBeNull()
+    })
+  })
+
+  describe('auth + input validation', () => {
+    it('rejects unauthenticated callers', async () => {
+      const caller = calendarRouter.createCaller({})
+      await expect(caller.getEventEnrichment({ eventId: 'e1' })).rejects.toThrow()
+    })
+
+    it('rejects inputs that provide neither eventId nor dayISO', async () => {
+      const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+      // @ts-expect-error intentionally invalid to exercise the zod refine
+      await expect(caller.getEventEnrichment({})).rejects.toThrow()
+    })
+
+    it('rejects inputs that provide both eventId and dayISO', async () => {
+      const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+      await expect(caller.getEventEnrichment({ eventId: 'e1', dayISO: '2026-04-23' }))
+        .rejects.toThrow()
+    })
   })
 })
 ```
 
-- [ ] **Step 2: Run and watch it fail**
+- [ ] **Step 3: Run and watch it fail**
 
-Run: `npx jest tests/server/trpc/routers/calendar.getPrepNotes.test.ts`
-Expected: FAIL — `getPrepNotes` not a member.
+Run: `npx jest tests/server/trpc/routers/calendar.getEventEnrichment.test.ts`
+Expected: FAIL — `getEventEnrichment` not a member.
 
-- [ ] **Step 3: Add the procedure**
+- [ ] **Step 4: Add the procedure**
 
 Edit `src/server/trpc/routers/calendar.ts`. Add (adapting the prompt/schema from the recovered `/tmp/old-digest.ts`):
 
@@ -720,9 +772,23 @@ const PrepNotesSchema = z.object({
   prepSuggestion: z.string().nullable(),
 })
 
+const InsightsSchema = z.object({
+  insights: z.array(z.string()),
+})
+
+const EnrichmentInput = z
+  .object({
+    eventId: z.string().min(1).optional(),
+    dayISO: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  .refine(
+    (v) => (v.eventId ? 1 : 0) + (v.dayISO ? 1 : 0) === 1,
+    { message: 'Provide exactly one of { eventId, dayISO }' },
+  )
+
 // Inside the router definition, alongside `list`:
-getPrepNotes: protectedProcedure
-  .input(z.object({ eventId: z.string().min(1) }))
+getEventEnrichment: protectedProcedure
+  .input(EnrichmentInput)
   .query(async ({ ctx, input }) => {
     // Reuse the same fetch pipeline as `list` — the calendar-fetcher is lightweight and keeps the
     // single-source-of-truth principle. Optimization (caching) is a Phase 4 concern.
@@ -742,17 +808,20 @@ getPrepNotes: protectedProcedure
       }
     }))
     const events = all.flat().filter(e => !hiddenCalendarIds.has(e.calendarId ?? ''))
-    const target = events.find(e => e.id === input.eventId)
-    if (!target) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: `Event ${input.eventId} not found` })
-    }
 
-    const sameDay = events
-      .filter(e => e.id !== target.id && e.start?.slice(0, 10) === target.start?.slice(0, 10))
-      .map(e => ({ title: e.title, start: e.start, end: e.end, location: e.location }))
+    // --- Per-event shape: prep notes for the drawer -------------------------
+    if (input.eventId) {
+      const target = events.find(e => e.id === input.eventId)
+      if (!target) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Event ${input.eventId} not found` })
+      }
 
-    // Prompt ported from the deleted /api/calendar/digest/route.ts — keep behavior identical.
-    const prompt = `You are a Chief of Staff AI helping Mary prepare for an upcoming calendar event.
+      const sameDay = events
+        .filter(e => e.id !== target.id && e.start?.slice(0, 10) === target.start?.slice(0, 10))
+        .map(e => ({ title: e.title, start: e.start, end: e.end, location: e.location }))
+
+      // Prompt ported from the deleted /api/calendar/digest/route.ts — keep behavior identical.
+      const prompt = `You are a Chief of Staff AI helping Mary prepare for an upcoming calendar event.
 
 TARGET EVENT:
 Title: ${target.title}
@@ -769,167 +838,57 @@ Produce two short strings:
 
 Be terse. No preamble. Mary reads these in a 96-px-wide sidebar.`
 
+      const { object } = await generateObject({
+        model: openai('gpt-4o-mini'),
+        schema: PrepNotesSchema,
+        prompt,
+      })
+      return { perEvent: object, dailyInsights: [] as string[] }
+    }
+
+    // --- Per-day shape: schedule insights for the home widget ---------------
+    // input.dayISO is guaranteed by the refine above.
+    const dayISO = input.dayISO!
+    const forDay = events
+      .filter(e => e.start?.slice(0, 10) === dayISO)
+      .map(e => ({ title: e.title, start: e.start, end: e.end, location: e.location }))
+
+    if (forDay.length === 0) {
+      return { perEvent: null, dailyInsights: [] as string[] }
+    }
+
+    const prompt = `You are Mary's Chief of Staff AI. Produce 1-4 bullet-point observations about her calendar events for ${dayISO}. Flag risks (back-to-back meetings with no buffer, long travel, conflicts, too many context switches). Be terse, signal-rich, no preamble.
+
+EVENTS:
+${JSON.stringify(forDay, null, 2)}`
+
     const { object } = await generateObject({
       model: openai('gpt-4o-mini'),
-      schema: PrepNotesSchema,
+      schema: InsightsSchema,
       prompt,
     })
-    return object
+    return { perEvent: null, dailyInsights: object.insights }
   }),
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 5: Run tests**
 
-Run: `npx jest tests/server/trpc/routers/calendar.getPrepNotes.test.ts`
-Expected: PASS (4 tests).
-
-Run: `npx jest`
-Expected: full suite green.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/server/trpc/routers/calendar.ts tests/server/trpc/routers/calendar.getPrepNotes.test.ts
-git commit -m "feat(trpc): calendar.getPrepNotes re-implements AI prep notes on tRPC"
-```
-
----
-
-### Task 6: `calendar.insights` procedure (home-widget enrichment)
-
-The home page previously showed schedule insights (a bulleted summary) populated by the old `/api/calendar/digest` route. That route was deleted; home widgets now render stale. Re-expose the feature as `trpc.calendar.insights.useQuery()` so the store can light up the widget slot.
-
-**Files:**
-- Modify: `src/server/trpc/routers/calendar.ts`
-- Create: `tests/server/trpc/routers/calendar.insights.test.ts`
-
-- [ ] **Step 1: Write the failing test**
-
-Create `tests/server/trpc/routers/calendar.insights.test.ts`:
-
-```ts
-import { calendarRouter } from '@/server/trpc/routers/calendar'
-import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
-import { refreshAccessToken } from '@/lib/server/google-oauth'
-import { fetchCalendarEvents } from '@/lib/server/calendar-fetcher'
-import { listCalendarMappings } from '@/lib/server/calendar-mappings'
-import * as aiModule from 'ai'
-
-jest.mock('@/lib/server/accounts')
-jest.mock('@/lib/server/google-oauth')
-jest.mock('@/lib/server/calendar-fetcher')
-jest.mock('@/lib/server/calendar-mappings')
-jest.mock('ai', () => ({ generateObject: jest.fn() }))
-jest.mock('@ai-sdk/openai', () => ({ openai: jest.fn() }))
-
-describe('calendar.insights', () => {
-  beforeEach(() => {
-    jest.clearAllMocks()
-    ;(listAccounts as jest.Mock).mockResolvedValue([{ id: 'a1', email: 'mary@tribe.ai' }])
-    ;(getDecryptedRefreshToken as jest.Mock).mockResolvedValue('rt')
-    ;(refreshAccessToken as jest.Mock).mockResolvedValue({ accessToken: 'at', expiresAt: 0 })
-    ;(listCalendarMappings as jest.Mock).mockResolvedValue([])
-    ;(fetchCalendarEvents as jest.Mock).mockResolvedValue([
-      { id: 'e1', title: 'Standup', start: '2026-04-22T15:00:00Z', calendarId: 'cal1' },
-    ])
-    ;(aiModule.generateObject as jest.Mock).mockResolvedValue({
-      object: { insights: ['Your morning is clear — good block for deep work.'] },
-    })
-  })
-
-  it('returns an array of insight strings', async () => {
-    const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
-    const { insights } = await caller.insights()
-    expect(insights).toEqual(['Your morning is clear — good block for deep work.'])
-  })
-
-  it('returns empty insights when there are no upcoming events', async () => {
-    ;(fetchCalendarEvents as jest.Mock).mockResolvedValue([])
-    const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
-    const { insights } = await caller.insights()
-    expect(insights).toEqual([])
-  })
-
-  it('rejects unauthenticated callers', async () => {
-    const caller = calendarRouter.createCaller({})
-    await expect(caller.insights()).rejects.toThrow()
-  })
-})
-```
-
-- [ ] **Step 2: Run and watch it fail**
-
-Run: `npx jest tests/server/trpc/routers/calendar.insights.test.ts`
-Expected: FAIL — `insights` not a member.
-
-- [ ] **Step 3: Add the procedure**
-
-Edit `src/server/trpc/routers/calendar.ts`:
-
-```ts
-const InsightsSchema = z.object({
-  insights: z.array(z.string()),
-})
-
-// In the router object:
-insights: protectedProcedure.query(async ({ ctx }) => {
-  const accounts = await listAccounts(ctx.uid)
-  const mappings = await listCalendarMappings(ctx.uid)
-  const hiddenCalendarIds = new Set(mappings.filter(m => m.visible === false).map(m => m.calendarId))
-
-  const all = await Promise.all(accounts.map(async (acc) => {
-    try {
-      const rt = await getDecryptedRefreshToken(ctx.uid, acc.id)
-      if (!rt) return []
-      const { accessToken } = await refreshAccessToken(rt)
-      return await fetchCalendarEvents(accessToken)
-    } catch {
-      return []
-    }
-  }))
-  const events = all.flat().filter(e => !hiddenCalendarIds.has(e.calendarId ?? ''))
-  if (events.length === 0) return { insights: [] }
-
-  // Only forward-looking events
-  const now = Date.now()
-  const upcoming = events
-    .filter(e => e.start && new Date(e.start).getTime() >= now)
-    .slice(0, 20)
-    .map(e => ({ title: e.title, start: e.start, location: e.location }))
-  if (upcoming.length === 0) return { insights: [] }
-
-  const prompt = `You are Mary's Chief of Staff AI. Produce 1-4 bullet-point observations about her upcoming day/week of calendar events. Be terse, signal-rich, no preamble.
-
-EVENTS:
-${JSON.stringify(upcoming, null, 2)}`
-
-  const { object } = await generateObject({
-    model: openai('gpt-4o-mini'),
-    schema: InsightsSchema,
-    prompt,
-  })
-  return object
-}),
-```
-
-- [ ] **Step 4: Run tests**
-
-Run: `npx jest tests/server/trpc/routers/calendar.insights.test.ts`
-Expected: PASS (3 tests).
+Run: `npx jest tests/server/trpc/routers/calendar.getEventEnrichment.test.ts`
+Expected: PASS (8 tests — 3 per-event, 2 per-day, 3 auth/validation).
 
 Run: `npx jest`
 Expected: full suite green.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/server/trpc/routers/calendar.ts tests/server/trpc/routers/calendar.insights.test.ts
-git commit -m "feat(trpc): calendar.insights for home widget enrichment"
+git add src/server/trpc/routers/calendar.ts tests/server/trpc/routers/calendar.getEventEnrichment.test.ts
+git commit -m "feat(trpc): calendar.getEventEnrichment — unified AI enrichment (per-event + per-day)"
 ```
 
 ---
 
-### Task 7: Extend `CalendarEvent` in the store
+### Task 6: Extend `CalendarEvent` in the store
 
 The existing `CalendarEvent` type in `src/lib/store.tsx` carries UI-projection fields (`time: string`, `date: number`). Schedule-X needs ISO `start`/`end`, and the filter sidebar needs `calendarId`, `calendarName`, `accountId`. Pass them through verbatim from `trpc.calendar.list` output.
 
@@ -997,19 +956,27 @@ import { formatInZone, zonedDate, userTimeZone } from '@/lib/datetime'
 
 Remove the now-dead `toLocaleTimeString` call from this block.
 
-- [ ] **Step 3: Wire `trpc.calendar.insights` into the store**
+- [ ] **Step 3: Wire `trpc.calendar.getEventEnrichment` (per-day shape) into the store**
 
-Add alongside the existing `trpc.calendar.list.useQuery()` call:
+Add alongside the existing `trpc.calendar.list.useQuery()` call. The home widget wants today's schedule insights, so we pass today's ISO date as `dayISO` and read `dailyInsights` off the response:
 
 ```ts
-const { data: insightsData } = trpc.calendar.insights.useQuery(undefined, {
-  enabled: !!user,
-  staleTime: 5 * 60 * 1000, // 5 minutes — cheap to keep stale for the home widget
-})
+import { format } from '@/lib/datetime'
+
+// Today's ISO date in the viewer's zone, computed once per render tree.
+const todayISO = useMemo(() => format(new Date(), 'yyyy-MM-dd'), [])
+
+const { data: enrichmentData } = trpc.calendar.getEventEnrichment.useQuery(
+  { dayISO: todayISO },
+  {
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000, // 5 minutes — cheap to keep stale for the home widget
+  },
+)
 
 const scheduleInsights: string[] = useMemo(
-  () => insightsData?.insights ?? [],
-  [insightsData],
+  () => enrichmentData?.dailyInsights ?? [],
+  [enrichmentData],
 )
 ```
 
@@ -1029,7 +996,7 @@ git commit -m "feat(store): pass ISO start/end + source fields; wire scheduleIns
 
 ---
 
-### Task 8: Schedule-X calendar app wrapper
+### Task 7: Schedule-X calendar app wrapper
 
 **Files:**
 - Create: `src/components/calendar/calendar-app.tsx`
@@ -1108,7 +1075,7 @@ git commit -m "feat(calendar): Schedule-X calendar app wrapper"
 
 ---
 
-### Task 9: Sorbet CSS theme for Schedule-X
+### Task 8: Sorbet CSS theme for Schedule-X
 
 **Files:**
 - Create: `src/styles/schedule-x-theme.css`
@@ -1170,7 +1137,7 @@ git commit -m "feat(calendar): sorbet theme for Schedule-X via CSS variable over
 
 ---
 
-### Task 10: Filter sidebar component
+### Task 9: Filter sidebar component
 
 **Files:**
 - Create: `src/components/calendar/filter-sidebar.tsx`
@@ -1277,7 +1244,7 @@ git commit -m "feat(calendar): filter sidebar (profiles + calendar visibility)"
 
 ---
 
-### Task 11: Event detail drawer with AI prep notes
+### Task 10: Event detail drawer with AI prep notes
 
 **Files:**
 - Create: `src/components/calendar/event-detail-drawer.tsx`
@@ -1304,13 +1271,14 @@ export function EventDetailDrawer({ eventId, onClose }: EventDetailDrawerProps) 
 
   const event = eventId ? events.find(e => e.id === eventId) ?? null : null
 
-  const { data: prep, isLoading } = trpc.calendar.getPrepNotes.useQuery(
+  const { data: enrichment, isLoading } = trpc.calendar.getEventEnrichment.useQuery(
     { eventId: eventId ?? '' },
     {
       enabled: !!eventId,
       staleTime: 10 * 60 * 1000, // 10 min — prep notes don't change between clicks
     },
   )
+  const prep = enrichment?.perEvent ?? null
 
   if (!event) return null
 
@@ -1377,7 +1345,7 @@ git commit -m "feat(calendar): event detail drawer with AI prep notes via tRPC"
 
 ---
 
-### Task 12: Rewrite `/calendar/page.tsx`
+### Task 11: Rewrite `/calendar/page.tsx`
 
 Full swap. Old week grid deleted; new page composes sidebar + Schedule-X + drawer.
 
@@ -1486,7 +1454,7 @@ git commit -m "feat(calendar): replace custom grid with Schedule-X + filters + d
 
 ---
 
-### Task 13: Settings → Calendars section wires to `setVisibility`
+### Task 12: Settings → Calendars section wires to `setVisibility`
 
 Settings gets a "Show" checkbox column so the same toggle is available in one central place, not only from the calendar page sidebar.
 
@@ -1583,9 +1551,9 @@ git commit -m "feat(settings): visibility checkbox column wired to calendars.set
 
 ---
 
-### Task 14: Home-widget AI insights — verify the regression is fixed
+### Task 13: Home-widget AI insights — verify the regression is fixed
 
-Home-page widgets that depended on `scheduleInsights` were broken by the deletion of `/api/calendar/digest` during the tRPC migration. Task 7 wired the new `trpc.calendar.insights` query into the store. This task confirms the widget actually renders.
+Home-page widgets that depended on `scheduleInsights` were broken by the deletion of `/api/calendar/digest` during the tRPC migration. Task 6 wired the merged `trpc.calendar.getEventEnrichment` query (per-day shape) into the store and exposed `scheduleInsights` off the `useHub` hook. This task confirms the widget actually renders.
 
 **Files:**
 - Investigate: `src/app/page.tsx`, `src/components/widgets/*`
@@ -1598,7 +1566,7 @@ Expected: results showing which components consume which fields.
 
 - [ ] **Step 2: Confirm the widget is reading from the `useHub` hook**
 
-Open the widget file surfaced by Step 1 (likely `src/components/widgets/schedule-widget.tsx` or similar). Verify it reads `scheduleInsights` via `useHub()`. If the widget is still pointing at a removed field (`scheduleInsights` was never added back to the hook's return in Task 7), add it to the destructuring and render.
+Open the widget file surfaced by Step 1 (likely `src/components/widgets/schedule-widget.tsx` or similar). Verify it reads `scheduleInsights` via `useHub()`. If the widget is still pointing at a removed field (`scheduleInsights` was never added back to the hook's return in Task 6), add it to the destructuring and render. The underlying query is the merged `trpc.calendar.getEventEnrichment({ dayISO: today })` — the widget itself should not call tRPC directly; it consumes `scheduleInsights` off `useHub()`.
 
 Sketch (replace once you've read the actual widget):
 
@@ -1619,7 +1587,7 @@ return (
 
 1. `npm run dev`
 2. Load `/`. Confirm the schedule-insights widget renders 1-4 bullet points (or an empty-state message).
-3. Check the Network tab: a single `/api/trpc/calendar.insights,...` batch call on initial load.
+3. Check the Network tab: a single `/api/trpc/calendar.getEventEnrichment,...` batch call on initial load (with the `dayISO` input).
 
 - [ ] **Step 4: Verify automated suite**
 
@@ -1630,12 +1598,12 @@ Expected: all green.
 
 ```bash
 git add -A
-git commit -m "fix(home): restore schedule-insights widget via calendar.insights query"
+git commit -m "fix(home): restore schedule-insights widget via calendar.getEventEnrichment query"
 ```
 
 ---
 
-### Task 15: Full verification + manual smoke
+### Task 14: Full verification + manual smoke
 
 - [ ] **Step 1: Run the full automated suite**
 
@@ -1643,7 +1611,7 @@ Run: `npx tsc --noEmit`
 Expected: zero errors.
 
 Run: `npx jest`
-Expected: every test green (baseline + all new router tests + datetime tests + visibility tests + prep-notes tests + insights tests).
+Expected: every test green (baseline + all new router tests + datetime tests + visibility tests + enrichment tests covering both per-event and per-day shapes).
 
 Run: `npm run lint`
 Expected: zero errors.
@@ -1660,7 +1628,7 @@ Run through the full flow. Check each box only after manual verification.
 - [ ] Clicking an event opens the right-side drawer
 - [ ] Drawer shows `Generating…` then AI content (travel buffer + prep suggestion)
 - [ ] Re-clicking the same event within 10 min hits the query cache (instant render, no network call)
-- [ ] Home schedule-insights widget renders the bulleted insights from `calendar.insights`
+- [ ] Home schedule-insights widget renders the bulleted insights from `calendar.getEventEnrichment({ dayISO })`
 - [ ] Theme matches sorbet: no Schedule-X default blue / chrome bleeding through
 - [ ] No Firestore permission errors in the server log
 - [ ] No duplicate-event warnings in the browser console
@@ -1683,8 +1651,8 @@ gh pr create --title "Calendar redesign v2: Schedule-X + visibility + filters + 
 - Schedule-X integration with day/week/month views, sorbet-themed
 - Per-calendar visibility flag (`CalendarMapping.visible`) + `calendars.setVisibility` mutation
 - Profile filter sidebar (client-side) + calendar visibility checkboxes
-- Event detail drawer with AI prep notes via new `calendar.getPrepNotes` tRPC procedure
-- Home-widget regression fix: new `calendar.insights` procedure backs the schedule-insights widget
+- Event detail drawer with AI prep notes via new `calendar.getEventEnrichment` tRPC procedure (per-event shape)
+- Home-widget regression fix: same `calendar.getEventEnrichment` procedure (per-day shape) backs the schedule-insights widget
 - Timezone-safe display via `date-fns-tz`
 
 Rewrite of the cancelled `docs/superpowers/plans/2026-04-21-calendar-redesign.md` on top of the new tRPC + TanStack Query baseline.
@@ -1703,11 +1671,11 @@ EOF
 
 Before declaring the calendar redesign v2 done:
 
-1. All 16 tasks committed (Tasks 0-15).
+1. All 15 tasks committed (Tasks 0-14).
 2. `npx tsc --noEmit` — zero errors.
 3. `npx jest` — full suite green.
 4. `npm run lint` — zero errors.
-5. Manual smoke checklist from Task 15 Step 2 — every box checked.
+5. Manual smoke checklist from Task 14 Step 2 — every box checked.
 6. PR open against `main`.
 
 ## What's Next

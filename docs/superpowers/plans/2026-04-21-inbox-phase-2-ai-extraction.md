@@ -4,7 +4,7 @@
 
 **Goal:** Replace the current 2-action classifier with a richer AI extraction pipeline that emits (a) one of six email-level classifications, (b) zero or more editable actions with `sourceQuote` + `confidence`, and (c) a `senderIdentity` linking the email to a Life Graph person/org. Persist profiles to Firestore and add a learning loop so unknown domains can be remembered after user confirmation.
 
-**Architecture:** Phase 2 is a data-layer + AI-pipeline refactor on top of the tRPC + TanStack Query baseline delivered by the architecture migration. The `inboxRouter.digest` procedure in `src/server/trpc/routers/inbox.ts` is rewritten end-to-end to emit a richer `Email` record (`classification`, `senderIdentity`, `hubStatus`, `suggestedActions` with `sourceQuote` + `confidence`). A new `profilesRouter` (`list`, `upsert`, `learnDomain`) replaces the legacy `/api/profiles` and `/api/profiles/learn-domain` Route Handlers. `EntityProfile` gains `knownDomains` / `knownSenders`, and profiles move from a hardcoded list in `src/lib/store.tsx` into Firestore with a seed on first read. A two-step sender-identity resolver runs server-side — direct lookup first (via `email-addresses` for parsing), then the LLM matches inferentially as part of the classification prompt. Dates flow into the prompt as ISO-local-time strings rendered with `date-fns-tz` — epoch milliseconds go in, human-readable ISO strings come out, DST is handled by the library. A small learning-loop banner in the existing `/inbox` UI lets the user confirm inferred domain matches, which invokes `trpc.profiles.learnDomain.useMutation()`. The client store consumes the new schema via the existing `trpc.inbox.digest.useQuery()` hook (set up in the architecture migration) plus new `trpc.profiles.*` hooks. The existing `/inbox` page keeps rendering via a thin compatibility shim (`src/lib/action-compat.ts`) mapping the new action status enum to the old `PENDING` / `APPROVED` / `DISMISSED` names. Phase 3 replaces the UI and drops the shim.
+**Architecture:** Phase 2 is a data-layer + AI-pipeline refactor on top of the tRPC + TanStack Query baseline delivered by the architecture migration. The `inboxRouter.digest` procedure in `src/server/trpc/routers/inbox.ts` is rewritten end-to-end to emit a richer `Email` record (`classification`, `senderIdentity`, `hubStatus`, `suggestedActions` with `sourceQuote` + `confidence`). A new `profilesRouter` (`list`, `upsert`, `learnDomain`, `listDismissedDomains`, `dismissDomain`) replaces the legacy `/api/profiles` and `/api/profiles/learn-domain` Route Handlers. `EntityProfile` gains `knownDomains` / `knownSenders`, and profiles move from a hardcoded list in `src/lib/store.tsx` into Firestore with a seed on first read. Dismissed learn-domain prompts live in a parallel Firestore subcollection (`users/{uid}/dismissedLearnPrompts/{domain}`) so the "Not this one" choice syncs across devices — Mary runs three Gmail accounts across multiple machines, and a `localStorage` flag would silently forget on every new device or cleared browser. A two-step sender-identity resolver runs server-side — direct lookup first (via `email-addresses` for parsing), then the LLM matches inferentially as part of the classification prompt. Dates flow into the prompt as ISO-local-time strings rendered with `date-fns-tz` — epoch milliseconds go in, human-readable ISO strings come out, DST is handled by the library. A small learning-loop banner in the existing `/inbox` UI lets the user confirm inferred domain matches, which invokes `trpc.profiles.learnDomain.useMutation()`; declining invokes `trpc.profiles.dismissDomain.useMutation()` and the banner hides based on `trpc.profiles.listDismissedDomains.useQuery()`. The client store consumes the new schema via the existing `trpc.inbox.digest.useQuery()` hook (set up in the architecture migration) plus new `trpc.profiles.*` hooks. The existing `/inbox` page keeps rendering via a thin compatibility shim (`src/lib/action-compat.ts`) mapping the new action status enum to the old `PENDING` / `APPROVED` / `DISMISSED` names. Phase 3 replaces the UI and drops the shim.
 
 **Tech Stack:** Next.js 16 (App Router), tRPC v11, `@tanstack/react-query` v5, Firebase Admin SDK (server), Firestore, `@ai-sdk/openai` + `ai` (`generateObject` with a Zod schema), `zod` v4, `date-fns` + `date-fns-tz` (NEW — ISO-local time in prompts), `email-addresses` (NEW — RFC-5322 From-header parsing), Jest + ts-jest.
 
@@ -33,11 +33,11 @@ If anything in this plan conflicts with the Next.js 16 docs, the tRPC v11 docs, 
 ## File Structure
 
 ### New files
-- `src/lib/server/profiles.ts` — Firestore CRUD for `EntityProfile`; seed on first read
+- `src/lib/server/profiles.ts` — Firestore CRUD for `EntityProfile` (seed on first read) plus `listDismissedDomains` / `dismissDomain` helpers for the `users/{uid}/dismissedLearnPrompts/{domain}` subcollection
 - `src/lib/server/sender-identity.ts` — `resolveDirectSenderIdentity(rawFrom, profiles)`; `parseFrom` backed by the `email-addresses` library
 - `src/lib/server/classification-schema.ts` — shared Zod schema + TypeScript types for the new `Email` / `EmailAction` / `SenderIdentity` shape
 - `src/lib/server/digest-prompt.ts` — prompt builder taking `rawEmails`, `profiles`, `preResolvedIdentities`, and a `now` reference; uses `date-fns-tz` to render ISO-local-time strings
-- `src/server/trpc/routers/profiles.ts` — new tRPC router with `list`, `upsert`, `learnDomain` procedures
+- `src/server/trpc/routers/profiles.ts` — new tRPC router with `list`, `upsert`, `learnDomain`, `listDismissedDomains`, `dismissDomain` procedures
 - `src/components/inbox/learn-domain-banner.tsx` — client component for the "Remember this domain?" prompt
 - `src/lib/action-compat.ts` — compatibility shim translating new action status enum ↔ the old UI's `PENDING` / `APPROVED` / `DISMISSED`
 - `tests/server/profiles.test.ts`
@@ -74,7 +74,7 @@ These are environment/infrastructure items the implementing agent cannot do alon
 
 - [ ] **P1. Phase 1 merged.** Confirm `main` includes `src/lib/server/accounts.ts`, `google-oauth.ts`, `gmail-fetcher.ts`, `session.ts`, `firebase-admin.ts`, and encrypted refresh-token storage. Run `git log --oneline -40` and grep for "Merge feature/inbox-phase-1".
 - [ ] **P2. Architecture migration merged.** Confirm `main` includes `src/server/trpc/index.ts`, `src/server/trpc/context.ts`, `src/server/trpc/root.ts`, `src/server/trpc/routers/inbox.ts` (Phase-1-parity), `src/server/trpc/routers/accounts.ts`, `src/app/api/trpc/[trpc]/route.ts`, `src/lib/trpc/client.ts`, `src/lib/trpc/provider.tsx`, and a `store.tsx` that imports from `@/lib/trpc/client`. If you do not see these files, stop and unblock the architecture migration first.
-- [ ] **P3. Firestore rules for new collection.** The `users/{uid}/profiles/{profileId}` collection needs the same "owner can read/write" rule as accounts. If the project uses Firestore Security Rules, update `firestore.rules` in the same PR. (If rules live elsewhere, note the location and flag to Mary.)
+- [ ] **P3. Firestore rules for new collections.** The `users/{uid}/profiles/{profileId}` and `users/{uid}/dismissedLearnPrompts/{domain}` subcollections both need the same "owner can read/write" rule as accounts. If the project uses Firestore Security Rules, update `firestore.rules` in the same PR. (If rules live elsewhere, note the location and flag to Mary.)
 - [ ] **P4. Environment variables.** No new env vars required; Phase 2 reuses `FIREBASE_ADMIN_SA_JSON`, `TOKEN_ENCRYPTION_KEY`, `OPENAI_API_KEY`.
 - [ ] **P5. Create the working branch.** Run `git checkout main && git pull && git checkout -b feature/inbox-phase-2`.
 - [ ] **P6. Confirm baseline is green.** Run `npx tsc --noEmit && npx jest && npm run lint`. All three must pass before starting.
@@ -532,11 +532,118 @@ export async function seedProfilesIfEmpty(uid: string): Promise<EntityProfile[]>
 Run: `npx jest tests/server/profiles.test.ts`
 Expected: PASS (3 tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Write the failing tests for dismissed-domain helpers**
+
+Append to `tests/server/profiles.test.ts`, inside the same `describe('server/profiles', ...)` block. The existing `makeFakeDb` helper returns a single shared `col` object for every subcollection lookup, which is fine for the profiles tests but would cross-contaminate dismissed-domain tests. Replace the previous `makeFakeDb` definition at the top of the file with this richer version that tracks each subcollection by name:
+
+```ts
+const makeFakeDb = () => {
+  const stores: Record<string, Map<string, Record<string, unknown>>> = {
+    profiles: new Map(),
+    dismissedLearnPrompts: new Map(),
+  }
+  const mkCol = (name: string) => {
+    const docs = stores[name]
+    const mkDoc = (id: string) => ({
+      id,
+      get: async () => ({
+        exists: docs.has(id),
+        id,
+        data: () => docs.get(id),
+      }),
+      set: async (d: Record<string, unknown>, opts?: { merge?: boolean }) => {
+        docs.set(id, opts?.merge ? { ...(docs.get(id) ?? {}), ...d } : d)
+      },
+      delete: async () => { docs.delete(id) },
+    })
+    return {
+      get: async () => ({ docs: Array.from(docs.entries()).map(([id, data]) => ({ id, data: () => data })) }),
+      doc: (id: string) => mkDoc(id),
+    }
+  }
+  return {
+    db: {
+      collection: () => ({
+        doc: () => ({ collection: (name: string) => mkCol(name) }),
+      }),
+    },
+    stores,
+  }
+}
+```
+
+Then add these three tests at the bottom of the `describe` block:
+
+```ts
+  it('listDismissedDomains returns [] when nothing is dismissed', async () => {
+    const domains = await listDismissedDomains('uid-1')
+    expect(domains).toEqual([])
+  })
+
+  it('dismissDomain persists a lowercased domain with a dismissedAt timestamp', async () => {
+    await dismissDomain('uid-1', 'Audaucy.ORG')
+    const domains = await listDismissedDomains('uid-1')
+    expect(domains).toEqual(['audaucy.org'])
+  })
+
+  it('dismissDomain is idempotent for the same domain (no duplicates)', async () => {
+    await dismissDomain('uid-1', 'audaucy.org')
+    await dismissDomain('uid-1', 'audaucy.org')
+    await dismissDomain('uid-1', 'blessedsacrament.org')
+    const domains = await listDismissedDomains('uid-1')
+    expect(new Set(domains)).toEqual(new Set(['audaucy.org', 'blessedsacrament.org']))
+  })
+```
+
+Update the top-of-file import to pull in the two new functions:
+
+```ts
+import {
+  listProfiles,
+  upsertProfile,
+  appendKnownDomain,
+  listDismissedDomains,
+  dismissDomain,
+} from '@/lib/server/profiles'
+```
+
+- [ ] **Step 6: Run tests to verify they fail**
+
+Run: `npx jest tests/server/profiles.test.ts`
+Expected: FAIL — `listDismissedDomains` / `dismissDomain` are not exported yet.
+
+- [ ] **Step 7: Implement `listDismissedDomains` and `dismissDomain`**
+
+In `src/lib/server/profiles.ts`, add a second collection helper and two new exported functions. Append to the end of the file (below `seedProfilesIfEmpty`):
+
+```ts
+function dismissedCol(uid: string) {
+  return getAdminDb().collection('users').doc(uid).collection('dismissedLearnPrompts')
+}
+
+export async function listDismissedDomains(uid: string): Promise<string[]> {
+  const snap = await dismissedCol(uid).get()
+  return snap.docs.map(d => d.id)
+}
+
+export async function dismissDomain(uid: string, domain: string): Promise<void> {
+  const key = domain.toLowerCase()
+  await dismissedCol(uid).doc(key).set({ dismissedAt: Date.now() }, { merge: true })
+}
+```
+
+The document id IS the domain (lowercased), so `listDismissedDomains` just reads the ids — the `dismissedAt` field is stored for forensics / future "forget" flows but is not returned from `list`.
+
+- [ ] **Step 8: Run tests to verify all pass**
+
+Run: `npx jest tests/server/profiles.test.ts`
+Expected: PASS (6 tests — 3 original + 3 new).
+
+- [ ] **Step 9: Commit**
 
 ```bash
 git add src/lib/server/profiles.ts tests/server/profiles.test.ts
-git commit -m "feat(profiles): Firestore CRUD + seed helper for EntityProfile"
+git commit -m "feat(profiles): Firestore CRUD + seed helper + dismissed-domain helpers"
 ```
 
 ---
@@ -1222,9 +1329,9 @@ If attachments were already surfaced, commit message: `chore(gmail-fetcher): con
 
 ---
 
-### Task 9: `profilesRouter` — tRPC `list`, `upsert`, `learnDomain` procedures
+### Task 9: `profilesRouter` — tRPC `list`, `upsert`, `learnDomain`, `listDismissedDomains`, `dismissDomain` procedures
 
-Replace the former `/api/profiles` + `/api/profiles/learn-domain` Route Handlers with a single tRPC router mounted at `appRouter.profiles`. Authorization is provided by `protectedProcedure` (sets `ctx.uid`).
+Replace the former `/api/profiles` + `/api/profiles/learn-domain` Route Handlers with a single tRPC router mounted at `appRouter.profiles`. Authorization is provided by `protectedProcedure` (sets `ctx.uid`). `listDismissedDomains` / `dismissDomain` back the learn-domain banner's "Not this one" flow with Firestore persistence (replacing localStorage so the decision syncs across devices).
 
 **Files:**
 - Create: `src/server/trpc/routers/profiles.ts`
@@ -1242,6 +1349,8 @@ import {
   upsertProfile,
   listProfiles,
   appendKnownDomain,
+  listDismissedDomains,
+  dismissDomain,
 } from '@/lib/server/profiles'
 import { TRPCError } from '@trpc/server'
 
@@ -1313,6 +1422,41 @@ describe('profiles router', () => {
       caller.learnDomain({ profileId: '', domain: 'audaucy.org' })
     ).rejects.toBeInstanceOf(TRPCError)
   })
+
+  it('listDismissedDomains returns the persisted domains for the caller', async () => {
+    ;(listDismissedDomains as jest.Mock).mockResolvedValue(['noise.example.com'])
+    const caller = profilesRouter.createCaller({ uid: 'mary-uid' })
+    const result = await caller.listDismissedDomains()
+    expect(listDismissedDomains).toHaveBeenCalledWith('mary-uid')
+    expect(result).toEqual({ domains: ['noise.example.com'] })
+  })
+
+  it('listDismissedDomains rejects unauthenticated callers', async () => {
+    const caller = profilesRouter.createCaller({})
+    await expect(caller.listDismissedDomains()).rejects.toBeInstanceOf(TRPCError)
+  })
+
+  it('dismissDomain persists a lowercased domain', async () => {
+    ;(dismissDomain as jest.Mock).mockResolvedValue(undefined)
+    const caller = profilesRouter.createCaller({ uid: 'mary-uid' })
+    const result = await caller.dismissDomain({ domain: 'Noise.Example.COM' })
+    expect(dismissDomain).toHaveBeenCalledWith('mary-uid', 'noise.example.com')
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('dismissDomain rejects a domain with protocol', async () => {
+    const caller = profilesRouter.createCaller({ uid: 'mary-uid' })
+    await expect(
+      caller.dismissDomain({ domain: 'https://noise.example.com' })
+    ).rejects.toBeInstanceOf(TRPCError)
+  })
+
+  it('dismissDomain rejects an empty domain', async () => {
+    const caller = profilesRouter.createCaller({ uid: 'mary-uid' })
+    await expect(
+      caller.dismissDomain({ domain: '' })
+    ).rejects.toBeInstanceOf(TRPCError)
+  })
 })
 ```
 
@@ -1333,6 +1477,8 @@ import {
   upsertProfile,
   seedProfilesIfEmpty,
   appendKnownDomain,
+  listDismissedDomains,
+  dismissDomain,
 } from '@/lib/server/profiles'
 
 const ProfileSchema = z.object({
@@ -1355,6 +1501,10 @@ const LearnDomainInput = z.object({
   domain: z.string().regex(DomainRe, 'Expect a bare domain like "example.com"'),
 })
 
+const DismissDomainInput = z.object({
+  domain: z.string().regex(DomainRe, 'Expect a bare domain like "example.com"'),
+})
+
 export const profilesRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const profiles = await seedProfilesIfEmpty(ctx.uid)
@@ -1373,6 +1523,18 @@ export const profilesRouter = router({
     .input(LearnDomainInput)
     .mutation(async ({ ctx, input }) => {
       await appendKnownDomain(ctx.uid, input.profileId, input.domain.toLowerCase())
+      return { ok: true as const }
+    }),
+
+  listDismissedDomains: protectedProcedure.query(async ({ ctx }) => {
+    const domains = await listDismissedDomains(ctx.uid)
+    return { domains }
+  }),
+
+  dismissDomain: protectedProcedure
+    .input(DismissDomainInput)
+    .mutation(async ({ ctx, input }) => {
+      await dismissDomain(ctx.uid, input.domain.toLowerCase())
       return { ok: true as const }
     }),
 })
@@ -1398,7 +1560,7 @@ Preserve the alphabetical/logical ordering already established by the architectu
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx jest tests/server/trpc/routers/profiles.test.ts`
-Expected: PASS (7 tests).
+Expected: PASS (12 tests).
 
 - [ ] **Step 6: Confirm full type-check**
 
@@ -1409,7 +1571,7 @@ Expected: no new errors from the router itself. Any remaining errors are pre-exi
 
 ```bash
 git add src/server/trpc/routers/profiles.ts src/server/trpc/root.ts tests/server/trpc/routers/profiles.test.ts
-git commit -m "feat(trpc): profiles.list + profiles.upsert + profiles.learnDomain"
+git commit -m "feat(trpc): profiles.list + upsert + learnDomain + listDismissedDomains + dismissDomain"
 ```
 
 ---
@@ -1811,9 +1973,9 @@ git commit -m "feat(store): hydrate profiles via trpc.profiles.list; add appendK
 
 ---
 
-### Task 12: Learn-domain UI banner (tRPC-backed)
+### Task 12: Learn-domain UI banner (tRPC-backed, Firestore-persisted dismissals)
 
-Show an inline "Remember this domain?" banner on the selected email when the LLM produced a `senderIdentity` whose `confidence` is `medium` and whose domain is not yet in the matched profile's `knownDomains`. Accepting calls `appendKnownDomain(profileId, domain)` (which fires the tRPC mutation + invalidates the profiles query). Declining stores a localStorage entry so the banner stays dismissed for that domain across sessions.
+Show an inline "Remember this domain?" banner on the selected email when the LLM produced a `senderIdentity` whose `confidence` is `medium` and whose domain is not yet in the matched profile's `knownDomains`. Accepting calls `appendKnownDomain(profileId, domain)` (which fires `trpc.profiles.learnDomain.useMutation()` + invalidates the profiles query). Declining calls `trpc.profiles.dismissDomain.useMutation()` with an optimistic cache update on `trpc.profiles.listDismissedDomains`, so the banner stays gone across reloads and — critically — across devices and Gmail accounts. No `localStorage`.
 
 **Files:**
 - Create: `src/components/inbox/learn-domain-banner.tsx`
@@ -1826,26 +1988,9 @@ Create `src/components/inbox/learn-domain-banner.tsx`:
 ```tsx
 "use client"
 
-import { useState } from 'react'
 import { useHub } from '@/lib/store'
+import { trpc } from '@/lib/trpc/client'
 import type { Email } from '@/lib/store'
-
-const LS_KEY = 'hub:learn-domain-dismissed'
-
-function dismissedSet(): Set<string> {
-  if (typeof window === 'undefined') return new Set()
-  try {
-    return new Set(JSON.parse(localStorage.getItem(LS_KEY) ?? '[]'))
-  } catch {
-    return new Set()
-  }
-}
-
-function recordDismiss(domain: string) {
-  const s = dismissedSet()
-  s.add(domain)
-  localStorage.setItem(LS_KEY, JSON.stringify(Array.from(s)))
-}
 
 function domainOf(sender: string): string {
   const at = sender.lastIndexOf('@')
@@ -1857,15 +2002,39 @@ function domainOf(sender: string): string {
 
 export function LearnDomainBanner({ email }: { email: Email }) {
   const { profiles, appendKnownDomain } = useHub()
-  const [hidden, setHidden] = useState(false)
+  const utils = trpc.useUtils()
 
-  if (hidden) return null
+  const { data: dismissedData } = trpc.profiles.listDismissedDomains.useQuery(undefined, {
+    // Query is cheap (one read of a small subcollection) and shared across emails.
+    staleTime: 60_000,
+  })
+  const dismissedDomains = dismissedData?.domains ?? []
+
+  const dismissMutation = trpc.profiles.dismissDomain.useMutation({
+    onMutate: async ({ domain }) => {
+      await utils.profiles.listDismissedDomains.cancel()
+      const previous = utils.profiles.listDismissedDomains.getData()
+      utils.profiles.listDismissedDomains.setData(undefined, (old) => ({
+        domains: Array.from(new Set([...(old?.domains ?? []), domain.toLowerCase()])),
+      }))
+      return { previous }
+    },
+    onError: (_err, _input, context) => {
+      if (context?.previous) {
+        utils.profiles.listDismissedDomains.setData(undefined, context.previous)
+      }
+    },
+    onSettled: () => {
+      utils.profiles.listDismissedDomains.invalidate()
+    },
+  })
+
   if (!email.senderIdentity?.personId) return null
   if (email.senderIdentity.confidence !== 'medium') return null
 
   const domain = domainOf(email.sender)
   if (!domain) return null
-  if (dismissedSet().has(domain)) return null
+  if (dismissedDomains.includes(domain)) return null
 
   const profile = profiles.find(p => p.id === email.senderIdentity!.personId)
   if (!profile) return null
@@ -1873,11 +2042,9 @@ export function LearnDomainBanner({ email }: { email: Email }) {
 
   const onAccept = async () => {
     await appendKnownDomain(profile.id, domain)
-    setHidden(true)
   }
   const onDecline = () => {
-    recordDismiss(domain)
-    setHidden(true)
+    dismissMutation.mutate({ domain })
   }
 
   return (
@@ -1904,6 +2071,11 @@ export function LearnDomainBanner({ email }: { email: Email }) {
 }
 ```
 
+Notes on what changed vs. the prior draft:
+- Dropped the `LS_KEY` constant, `dismissedSet()` helper, and `recordDismiss()` helper entirely — no `localStorage` reads or writes anywhere.
+- Dropped the `const [hidden, setHidden] = useState(false)` local flag. After "Remember" or "Not this one" the banner disappears because the underlying predicate (profile `knownDomains` vs. query-cached `dismissedDomains`) now excludes it. Both flows are optimistic, so there is no visual lag.
+- The "Remember" button (`appendKnownDomain`) behavior is unchanged.
+
 - [ ] **Step 2: Mount the banner in the inbox page**
 
 In `src/app/inbox/page.tsx`, add near the existing imports:
@@ -1920,12 +2092,16 @@ Inside the reader pane, directly below the header block (above the `<div>` that 
 
 If the variable name in this file is `selectedEmail` or `openEmail` rather than `activeEmail`, use the local name — the component takes a prop named `email`.
 
-- [ ] **Step 3: Type-check**
+- [ ] **Step 3: Purge any prior localStorage-based dismiss tests**
+
+If earlier iterations of this file left behind tests referencing `hub:learn-domain-dismissed`, `LS_KEY`, `dismissedSet`, or `recordDismiss` (e.g. in `tests/components/learn-domain-banner.test.tsx`, `tests/lib/store.test.ts`, or similar), delete those cases. Replace with assertions that the component calls `trpc.profiles.dismissDomain.useMutation()` on "Not this one" and reads from `trpc.profiles.listDismissedDomains.useQuery()` on render. Run `grep -R "learn-domain-dismissed\|LS_KEY\|dismissedSet\|recordDismiss" tests src` and expect zero hits after this step.
+
+- [ ] **Step 4: Type-check**
 
 Run: `npx tsc --noEmit`
 Expected: no errors from the new component or its call site.
 
-- [ ] **Step 4: Manual smoke**
+- [ ] **Step 5: Manual smoke**
 
 Run: `npm run dev`. Log in with at least one Gmail account. Walk through:
 
@@ -1933,15 +2109,16 @@ Run: `npm run dev`. Log in with at least one Gmail account. Walk through:
 - Expected: banner appears with the domain and profile name.
 - Click **Remember** → banner disappears; refresh; banner stays gone for the same domain; confirm the domain is now in the profile's `knownDomains` by inspecting the cached tRPC query (React Query devtools) or hitting the procedure directly.
 - On a new email from the same domain, the LLM should now receive `confidence: 'high'` in the pre-resolved map (no banner).
-- On another new-domain email, click **Not this one** → banner disappears; reload; does not reappear for that domain.
+- On another new-domain email, click **Not this one** → banner disappears; reload; does not reappear for that domain. Open the app in a second browser / incognito window signed in as the same user — the banner should also stay hidden there (confirms Firestore persistence, not localStorage).
+- In the Firebase console (or via Admin SDK REPL), confirm `users/{uid}/dismissedLearnPrompts/{domain}` exists with a `dismissedAt` field.
 
 Record the results in the commit body.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/components/inbox/learn-domain-banner.tsx src/app/inbox/page.tsx
-git commit -m "feat(inbox): learn-domain banner wired to profiles.learnDomain mutation"
+git commit -m "feat(inbox): learn-domain banner backed by profiles.learnDomain + profiles.dismissDomain (Firestore-persisted, no localStorage)"
 ```
 
 ---
