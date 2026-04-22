@@ -50,7 +50,6 @@ jobs:
       - run: npm run test:e2e
         if: env.E2E_USER_EMAIL != ''
         env:
-          E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
           FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
           FIREBASE_ADMIN_SA_JSON: ${{ secrets.FIREBASE_ADMIN_SA_JSON }}
           TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
