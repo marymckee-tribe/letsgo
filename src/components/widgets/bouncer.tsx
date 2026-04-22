@@ -49,7 +49,7 @@ export function Bouncer({ className }: { className?: string }) {
                      <div className="flex flex-col gap-3 mt-8">
                        <span className="text-[10px] uppercase font-bold tracking-widest text-signal-ai mb-2">Pending AI Actions</span>
                        {email.suggestedActions.map(action => (
-                         <div key={action.id} className={`flex items-center justify-between bg-signal-ai/8 p-4 border border-signal-ai/20 transition-opacity ${action.status !== 'PENDING' ? 'opacity-40 grayscale' : ''}`}>
+                         <div key={action.id} className={`flex items-center justify-between bg-signal-ai/8 p-4 border border-signal-ai/20 transition-opacity ${action.status !== 'PROPOSED' ? 'opacity-40 grayscale' : ''}`}>
                            <div className="flex flex-col gap-1">
                              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{action.type.replace('_', ' ')}</span>
                              <span className="text-sm font-sans tracking-tight text-foreground font-medium">{action.title}</span>
@@ -58,7 +58,7 @@ export function Bouncer({ className }: { className?: string }) {
                              )}
                            </div>
 
-                           {action.status === 'PENDING' ? (
+                           {action.status === 'PROPOSED' ? (
                              <div className="flex flex-col gap-2 shrink-0 ml-4">
                                <button onClick={(e) => { e.preventDefault(); actOnEmailAction(email.id, action.id) }} className="bg-foreground text-background px-5 py-2 text-[10px] uppercase font-bold tracking-widest hover:bg-foreground/80 transition-colors w-full">Act</button>
                                <button onClick={(e) => { e.preventDefault(); dismissEmailAction(email.id, action.id) }} className="border bg-background border-border px-5 py-2 text-[10px] uppercase font-bold tracking-widest hover:bg-muted transition-colors w-full">Dismiss</button>

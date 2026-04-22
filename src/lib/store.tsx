@@ -41,16 +41,68 @@ export type EntityProfile = {
   routines: string[]
   sizes: Record<string, string>
   medicalNotes: string
+  knownDomains?: string[]
+  knownSenders?: string[]
 }
+
+export type SenderIdentity = {
+  personId?: string
+  orgName?: string
+  confidence: "low" | "medium" | "high"
+}
+
+export type Attachment = {
+  id: string
+  filename: string
+  mimeType: string
+  size: number
+}
+
+export type EmailActionType = "CALENDAR_EVENT" | "TODO" | "NEEDS_REPLY"
+
+export type EmailActionStatus =
+  | "PROPOSED"
+  | "EDITING"
+  | "WRITING"
+  | "COMMITTED"
+  | "DISMISSED"
+  | "FAILED"
 
 export type EmailAction = {
   id: string
-  type: "CALENDAR_INVITE" | "TODO_ITEM" | "OTHER"
+  type: EmailActionType
   title: string
   date?: number
   time?: string
   context?: string
-  status: "PENDING" | "APPROVED" | "DISMISSED"
+  sourceQuote: string
+  confidence: "low" | "medium" | "high"
+  status: EmailActionStatus
+  googleId?: string
+}
+
+export type EmailClassification =
+  | "CALENDAR_EVENT"
+  | "TODO"
+  | "NEEDS_REPLY"
+  | "WAITING_ON"
+  | "FYI"
+  | "NEWSLETTER"
+
+export type EmailHubStatus = "UNREAD" | "READ" | "CLEARED"
+
+// Map legacy server action type strings to new EmailActionType names
+const mapActionType = (raw: string): EmailActionType => {
+  if (raw === 'CALENDAR_INVITE' || raw === 'CALENDAR_EVENT') return 'CALENDAR_EVENT'
+  if (raw === 'TODO_ITEM' || raw === 'TODO') return 'TODO'
+  return 'NEEDS_REPLY'
+}
+
+// Map legacy server status strings to new EmailActionStatus names
+const mapActionStatus = (raw: string | undefined): EmailActionStatus => {
+  if (raw === 'APPROVED' || raw === 'COMMITTED') return 'COMMITTED'
+  if (raw === 'DISMISSED') return 'DISMISSED'
+  return 'PROPOSED'
 }
 
 export type Email = {
@@ -59,11 +111,14 @@ export type Email = {
   accountEmail?: string
   subject: string
   sender: string
+  senderIdentity?: SenderIdentity
+  classification: EmailClassification
   snippet: string
   fullBody: string
-  attachments: { filename: string, mimeType: string }[]
+  attachments: Attachment[]
   suggestedActions: EmailAction[]
   date: number
+  hubStatus: EmailHubStatus
 }
 
 interface HubState {
@@ -85,6 +140,7 @@ interface HubState {
   setEventLocation: (id: string, location: string) => void
   setEventNotes: (id: string, notes: string) => void
   toggleGrocery: (id: string) => void
+  appendKnownDomain: (profileId: string, domain: string) => Promise<void>
 }
 
 const HubContext = createContext<HubState | undefined>(undefined)
@@ -93,21 +149,12 @@ const initialGroceries: GroceryItem[] = [
   { id: "1", name: "Milk" }
 ]
 
-const initialProfiles: EntityProfile[] = [
-  { id: "mary", name: "Mary", type: "Adult", currentContext: "Focused on the architecture phase for the Family OS. Organizing upcoming travel logistics.", preferences: ["V60 Coffee", "Window seats", "Minimalist aesthetics"], routines: ["Morning deep work 8-11am"], sizes: {}, medicalNotes: "" },
-  { id: "doug", name: "Doug", type: "Adult", currentContext: "Preparing for Q2 board meetings.", preferences: ["Espresso", "Aisle seats"], routines: [], sizes: {}, medicalNotes: "" },
-  { id: "ellie", name: "Ellie", type: "Child", currentContext: "Getting ready for middle school transition. Needs new gymnastics gear for the upcoming season.", preferences: ["Gymnastics", "Pasta"], routines: ["Tues/Thurs Gymnastics 4pm"], sizes: { "Shoe": "4 Youth", "Shirt": "Medium Youth" }, medicalNotes: "Peanut allergy" },
-  { id: "annie", name: "Annie", type: "Child", currentContext: "Starting the new art program this week.", preferences: ["Painting", "Mac & Cheese"], routines: ["Wed Art Class 3:30pm"], sizes: { "Shoe": "2 Youth" }, medicalNotes: "" },
-  { id: "ness", name: "Ness", type: "Pet", currentContext: "Due for annual vet checkup next month.", preferences: ["Salmon treats"], routines: ["Morning walk 7am", "Evening walk 6pm"], sizes: {}, medicalNotes: "Sensitive stomach" },
-]
-
 export function HubProvider({ children }: { children: React.ReactNode }) {
   const [additionalEvents, setAdditionalEvents] = useState<CalendarEvent[]>([])
   const [scheduleInsights] = useState<string[]>([])
   const [additionalTasks, setAdditionalTasks] = useState<Task[]>([])
   const [groceries, setGroceries] = useState<GroceryItem[]>(initialGroceries)
   const [emailOverrides, setEmailOverrides] = useState<Map<string, EmailAction[]>>(new Map())
-  const [profiles] = useState<EntityProfile[]>(initialProfiles)
   const { user, loading } = useAuth()
 
   // --- tRPC queries ---
@@ -121,6 +168,10 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   })
 
   const { data: inboxData, error: inboxError } = trpc.inbox.digest.useQuery(undefined, {
+    enabled: !loading && !!user,
+  })
+
+  const { data: profilesData, error: profilesError } = trpc.profiles.list.useQuery(undefined, {
     enabled: !loading && !!user,
   })
 
@@ -143,6 +194,12 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       toast("SYNC ERROR", { description: "Gmail: " + inboxError.message })
     }
   }, [inboxError])
+
+  useEffect(() => {
+    if (profilesError) {
+      toast("SYNC ERROR", { description: "Profiles: " + profilesError.message })
+    }
+  }, [profilesError])
 
   // --- Derived state via useMemo ---
 
@@ -198,31 +255,55 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   const emails = useMemo<Email[]>(() => {
     if (!inboxData?.emails) return []
-    return inboxData.emails.map((e) => ({
-      id: e.id,
-      accountId: (e as { accountId?: string }).accountId,
-      accountEmail: (e as { accountEmail?: string }).accountEmail,
-      subject: e.subject,
-      sender: e.sender,
-      snippet: e.snippet,
-      fullBody: (e as { fullBody?: string }).fullBody ?? '',
-      attachments: [],
-      date: (e as { date?: number }).date ?? 0,
-      suggestedActions: emailOverrides.has(e.id)
-        ? emailOverrides.get(e.id)!
-        : e.suggestedActions.map((a) => ({
-            id: a.id,
-            type: a.type as "CALENDAR_INVITE" | "TODO_ITEM" | "OTHER",
-            title: a.title,
-            date: a.date ?? undefined,
-            time: a.time ?? undefined,
-            context: a.context ?? undefined,
-            status: (a as { status?: "PENDING" | "APPROVED" | "DISMISSED" }).status ?? "PENDING",
-          })),
-    }))
+    return inboxData.emails.map((e) => {
+      return {
+        id: e.id,
+        accountId: (e as { accountId?: string }).accountId,
+        accountEmail: (e as { accountEmail?: string }).accountEmail,
+        subject: e.subject,
+        sender: e.sender,
+        // TODO(P2 Task 10): classification/hubStatus come from the AI digest once the
+        // server router is rewritten. Until then, every email defaults to FYI/UNREAD
+        // regardless of true classification or Gmail read-state.
+        classification: 'FYI' as EmailClassification,
+        snippet: e.snippet,
+        fullBody: (e as { fullBody?: string }).fullBody ?? '',
+        attachments: [],
+        date: (e as { date?: number }).date ?? 0,
+        hubStatus: 'UNREAD' as EmailHubStatus,
+        suggestedActions: emailOverrides.has(e.id)
+          ? emailOverrides.get(e.id)!
+          : e.suggestedActions.map((a) => ({
+              id: a.id,
+              type: mapActionType(a.type),
+              title: a.title,
+              date: a.date ?? undefined,
+              time: a.time ?? undefined,
+              context: a.context ?? undefined,
+              sourceQuote: '',
+              confidence: 'low' as const,
+              status: mapActionStatus((a as { status?: string }).status),
+            })),
+      }
+    })
   }, [inboxData, emailOverrides])
 
+  const profiles = useMemo<EntityProfile[]>(() => {
+    if (!profilesData?.profiles) return []
+    return profilesData.profiles as unknown as EntityProfile[]
+  }, [profilesData])
+
   // --- Mutations ---
+
+  const utils = trpc.useUtils()
+  const learnDomainMutation = trpc.profiles.learnDomain.useMutation({
+    onSuccess: () => utils.profiles.list.invalidate(),
+    onError: (e) => toast("ERROR", { description: e.message }),
+  })
+
+  const appendKnownDomain = async (profileId: string, domain: string) => {
+    await learnDomainMutation.mutateAsync({ profileId, domain })
+  }
 
   const addEvent = (event: CalendarEvent) => {
     setAdditionalEvents(prev => prev.some(e => e.id === event.id) ? prev : [...prev, event])
@@ -309,7 +390,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       const updated = currentActions.map(a => {
         if (a.id === actionId) {
           actionItem = a
-          return { ...a, status: "APPROVED" as const }
+          return { ...a, status: "COMMITTED" as const }
         }
         return a
       })
@@ -321,9 +402,9 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
     if (actionItem) {
       const act = actionItem as EmailAction
-      if (act.type === 'CALENDAR_INVITE') {
+      if (act.type === 'CALENDAR_EVENT') {
         addEvent({ id: Math.random().toString(), title: act.title, time: act.time || "12:00", date: act.date || 1, fromEmail: true })
-      } else if (act.type === 'TODO_ITEM') {
+      } else if (act.type === 'TODO') {
         addTask({ id: Math.random().toString(), title: act.title, context: act.context || "PERSONAL", completed: false })
       }
     }
@@ -347,7 +428,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <HubContext.Provider value={{ events, scheduleInsights, tasks, groceries, emails, profiles, addEvent, addTask, addGrocery, toggleTask, actOnEmailAction, dismissEmailAction, setEventTitle, setEventTime, setEventLocation, setEventNotes, toggleGrocery }}>
+    <HubContext.Provider value={{ events, scheduleInsights, tasks, groceries, emails, profiles, addEvent, addTask, addGrocery, toggleTask, actOnEmailAction, dismissEmailAction, setEventTitle, setEventTime, setEventLocation, setEventNotes, toggleGrocery, appendKnownDomain }}>
       {children}
     </HubContext.Provider>
   )

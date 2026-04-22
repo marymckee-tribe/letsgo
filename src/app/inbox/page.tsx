@@ -3,6 +3,7 @@
 import { useHub } from "@/lib/store"
 import { useState } from "react"
 import { Paperclip, Inbox as InboxIcon, User, Activity } from "lucide-react"
+import { LearnDomainBanner } from "@/components/inbox/learn-domain-banner"
 
 export default function InboxPage() {
   const { emails, actOnEmailAction, dismissEmailAction } = useHub()
@@ -49,7 +50,7 @@ export default function InboxPage() {
                       {email.snippet}
                     </p>
 
-                    {email.suggestedActions?.some(a => a.status === 'PENDING') && (
+                    {email.suggestedActions?.some(a => a.status === 'PROPOSED') && (
                       <div className="mt-4 flex gap-2">
                         <span className={`text-[8px] font-bold uppercase py-1 px-2 tracking-widest flex items-center gap-1
                           ${isSelected ? 'bg-background/20 text-background' : 'bg-foreground/10 text-foreground'}
@@ -79,6 +80,12 @@ export default function InboxPage() {
                         <span>{new Date(activeEmail.date).toLocaleString()}</span>
                      </div>
                    </div>
+
+                   {activeEmail && (
+                     <div className="px-8 lg:px-12 pt-4">
+                       <LearnDomainBanner email={activeEmail} />
+                     </div>
+                   )}
 
                    <div className="p-8 lg:p-12 font-serif text-sm leading-[1.8] text-foreground/80 whitespace-pre-wrap flex-1 bg-white">
                       {activeEmail.fullBody || activeEmail.snippet}
@@ -112,7 +119,7 @@ export default function InboxPage() {
                     ) : (
                       <div className="flex flex-col gap-6">
                         {activeEmail.suggestedActions.map(action => (
-                           <div key={action.id} className={`flex flex-col bg-white border ${action.status === 'PENDING' ? 'border-foreground' : 'border-border opacity-50 grayscale'} p-5 shadow-[4px_4px_0_rgba(0,0,0,0.05)] transition-all`}>
+                           <div key={action.id} className={`flex flex-col bg-white border ${action.status === 'PROPOSED' ? 'border-foreground' : 'border-border opacity-50 grayscale'} p-5 shadow-[4px_4px_0_rgba(0,0,0,0.05)] transition-all`}>
 
                              <div className="mb-6">
                                <span className="text-[10px] font-bold uppercase tracking-widest text-foreground/40 block mb-2">{action.type.replace('_', ' ')}</span>
@@ -122,7 +129,7 @@ export default function InboxPage() {
                                )}
                              </div>
 
-                             {action.status === 'PENDING' ? (
+                             {action.status === 'PROPOSED' ? (
                                <div className="flex flex-col gap-2">
                                  <button onClick={() => actOnEmailAction(activeEmail.id, action.id)} className="w-full bg-foreground text-background text-[10px] font-bold uppercase tracking-widest py-3 hover:bg-foreground/80 transition-colors">Act</button>
                                  <button onClick={() => dismissEmailAction(activeEmail.id, action.id)} className="w-full border border-border text-muted-foreground text-[10px] uppercase font-bold tracking-widest hover:bg-muted transition-colors py-3">Skip</button>

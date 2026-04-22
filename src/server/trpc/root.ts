@@ -5,6 +5,7 @@ import { calendarRouter } from './routers/calendar'
 import { calendarsRouter } from './routers/calendars'
 import { gmailRouter } from './routers/gmail'
 import { inboxRouter } from './routers/inbox'
+import { profilesRouter } from './routers/profiles'
 import { tasksRouter } from './routers/tasks'
 
 export const appRouter = router({
@@ -14,6 +15,7 @@ export const appRouter = router({
   calendars: calendarsRouter,
   gmail: gmailRouter,
   inbox: inboxRouter,
+  profiles: profilesRouter,
   tasks: tasksRouter,
 })
 
