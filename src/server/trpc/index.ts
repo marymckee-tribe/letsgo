@@ -9,6 +9,7 @@ const t = initTRPC.context<TrpcContext>().create({
   },
 })
 
+export { t }
 export const router = t.router
 export const publicProcedure = t.procedure
 
