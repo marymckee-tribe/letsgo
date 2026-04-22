@@ -3,11 +3,12 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog"
 import { Paperclip } from "lucide-react"
+import { toast } from "sonner"
 import { useHub } from "@/lib/store"
 import { SignalPill } from "@/components/ui/signal-pill"
 
 export function Bouncer({ className }: { className?: string }) {
-  const { emails, actOnEmailAction, dismissEmailAction } = useHub()
+  const { emails } = useHub()
   
   return (
     <div className={`flex flex-col h-full ${className}`}>
@@ -60,8 +61,8 @@ export function Bouncer({ className }: { className?: string }) {
 
                            {action.status === 'PROPOSED' ? (
                              <div className="flex flex-col gap-2 shrink-0 ml-4">
-                               <button onClick={(e) => { e.preventDefault(); actOnEmailAction(email.id, action.id) }} className="bg-foreground text-background px-5 py-2 text-[10px] uppercase font-bold tracking-widest hover:bg-foreground/80 transition-colors w-full">Act</button>
-                               <button onClick={(e) => { e.preventDefault(); dismissEmailAction(email.id, action.id) }} className="border bg-background border-border px-5 py-2 text-[10px] uppercase font-bold tracking-widest hover:bg-muted transition-colors w-full">Dismiss</button>
+                               <button onClick={(e) => { e.preventDefault(); toast('Open /inbox to triage', { description: 'Action controls live in the inbox deck now — the home widget will be rebuilt in Phase 7.' }) }} className="bg-foreground text-background px-5 py-2 text-[10px] uppercase font-bold tracking-widest hover:bg-foreground/80 transition-colors w-full">Act</button>
+                               <button onClick={(e) => { e.preventDefault(); toast('Open /inbox to triage') }} className="border bg-background border-border px-5 py-2 text-[10px] uppercase font-bold tracking-widest hover:bg-muted transition-colors w-full">Dismiss</button>
                              </div>
                            ) : (
                              <span className="text-[10px] font-bold tracking-widest uppercase border border-border px-3 py-1 bg-background">{action.status}</span>
