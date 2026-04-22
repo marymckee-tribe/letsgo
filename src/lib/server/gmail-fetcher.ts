@@ -2,8 +2,16 @@
 
 interface GmailPayload {
   mimeType?: string
-  body?: { data?: string }
+  filename?: string
+  body?: { data?: string; attachmentId?: string; size?: number }
   parts?: GmailPayload[]
+}
+
+export interface GmailAttachment {
+  id: string
+  filename: string
+  mimeType: string
+  size: number
 }
 
 export interface GmailEmail {
@@ -13,6 +21,26 @@ export interface GmailEmail {
   snippet: string
   fullBody: string
   date: number
+  attachments: GmailAttachment[]
+}
+
+function extractAttachments(payload: GmailPayload): GmailAttachment[] {
+  if (!payload) return []
+  const results: GmailAttachment[] = []
+  if (payload.body?.attachmentId && payload.filename) {
+    results.push({
+      id: payload.body.attachmentId,
+      filename: payload.filename,
+      mimeType: payload.mimeType || 'application/octet-stream',
+      size: payload.body.size ?? 0,
+    })
+  }
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      results.push(...extractAttachments(part))
+    }
+  }
+  return results
 }
 
 export async function fetchUnreadPrimary(accessToken: string): Promise<GmailEmail[]> {
@@ -48,6 +76,7 @@ export async function fetchUnreadPrimary(accessToken: string): Promise<GmailEmai
       snippet: msgData.snippet,
       fullBody: (extractBody(msgData.payload) || msgData.snippet || '').slice(0, 4000),
       date: parseInt(msgData.internalDate || String(Date.now()), 10),
+      attachments: extractAttachments(msgData.payload),
     }
   }))
 }
