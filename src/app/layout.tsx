@@ -6,6 +6,7 @@ import { MainNav } from "@/components/nav";
 import { Toaster } from "@/components/ui/sonner";
 import { HubProvider } from "@/lib/store";
 import { AuthProvider } from "@/lib/auth-provider";
+import { TRPCProvider } from "@/lib/trpc/provider";
 
 const jost = Jost({
   variable: "--font-jost",
@@ -37,11 +38,13 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
+            <TRPCProvider>
             <HubProvider>
               <MainNav />
               {children}
               <Toaster position="bottom-right" toastOptions={{ className: "border-0 shadow-none rounded-none bg-foreground text-background px-6 py-4 font-mono uppercase tracking-widest text-xs" }} />
             </HubProvider>
+            </TRPCProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>
