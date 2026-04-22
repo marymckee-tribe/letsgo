@@ -1,4 +1,4 @@
-import { openai } from '@ai-sdk/openai'
+import { anthropic } from '@ai-sdk/anthropic'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { router, protectedProcedure } from '../index'
@@ -65,7 +65,7 @@ export const inboxRouter = router({
     })
 
     const { object } = await generateObject({
-      model: openai('gpt-4o-mini'),
+      model: anthropic('claude-haiku-4-5'),
       schema: ClassifiedEmailsSchema,
       prompt,
     })

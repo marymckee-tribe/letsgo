@@ -13,10 +13,10 @@ export const ACTION_TYPE_VALUES = ['CALENDAR_EVENT', 'TODO', 'NEEDS_REPLY'] as c
 
 export const ConfidenceSchema = z.enum(['low', 'medium', 'high'])
 
-// OpenAI structured-outputs strict mode requires every property in `properties`
-// to appear in `required`. Optional fields must be expressed as `.nullable()`
-// (null-or-value) rather than `.optional()` (may-be-absent). See
-// https://platform.openai.com/docs/guides/structured-outputs.
+// Structured-outputs strict mode (both OpenAI and Anthropic via the Vercel AI
+// SDK) requires every property in `properties` to appear in `required`. Optional
+// fields must be expressed as `.nullable()` (null-or-value) rather than
+// `.optional()` (may-be-absent).
 export const SenderIdentitySchema = z.object({
   personId: z.string().nullable(),
   orgName: z.string().nullable(),

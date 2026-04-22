@@ -11,7 +11,7 @@ jest.mock('@/lib/server/google-oauth')
 jest.mock('@/lib/server/gmail-fetcher')
 jest.mock('@/lib/server/profiles')
 jest.mock('ai', () => ({ generateObject: jest.fn() }))
-jest.mock('@ai-sdk/openai', () => ({ openai: jest.fn() }))
+jest.mock('@ai-sdk/anthropic', () => ({ anthropic: jest.fn() }))
 // digest now calls getHubStatusMap — mock returns empty map (no overrides = UNREAD default, preserving pre-Phase-3 behavior)
 jest.mock('@/lib/server/inbox-status', () => ({
   getHubStatusMap: jest.fn().mockResolvedValue({}),
