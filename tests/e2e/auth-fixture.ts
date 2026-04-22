@@ -52,6 +52,7 @@ export const test = base.extend<{ signedInPage: import('@playwright/test').Page 
     if (!email || !password) throw new Error('E2E_USER_EMAIL / E2E_USER_PASSWORD not set — see tests/e2e/README.md')
     await signIn(page, { email, password })
     await page.goto('/')
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- `use` is Playwright's fixture callback, not a React Hook
     await use(page)
   },
 })
