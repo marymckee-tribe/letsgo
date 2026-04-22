@@ -26,28 +26,37 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     needs: verify
-    # Gate: skip entirely when the test-user secrets are not yet configured.
-    # secrets context is available at the job level in GitHub Actions.
-    # The != '' check is the idiomatic way to express "secret exists and is non-empty".
-    if: ${{ secrets.E2E_USER_EMAIL != '' }}
+    # Gate: skip the heavy steps when the test-user secrets are not yet
+    # configured. `secrets.*` is NOT available in job-level `if` (only step
+    # `if`), so we lift the sentinel into `env` at the job level — `env.*`
+    # IS allowed in step `if`s — and each heavy step checks it.
+    env:
+      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
     steps:
+      - name: Skip when E2E secrets are not configured
+        if: env.E2E_USER_EMAIL == ''
+        run: echo "E2E_USER_EMAIL secret not set; skipping Playwright run."
       - uses: actions/checkout@v4
+        if: env.E2E_USER_EMAIL != ''
       - uses: actions/setup-node@v4
+        if: env.E2E_USER_EMAIL != ''
         with:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
+        if: env.E2E_USER_EMAIL != ''
       - run: npx playwright install chromium --with-deps
+        if: env.E2E_USER_EMAIL != ''
       - run: npm run test:e2e
+        if: env.E2E_USER_EMAIL != ''
         env:
-          E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
           E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
           FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
           FIREBASE_ADMIN_SA_JSON: ${{ secrets.FIREBASE_ADMIN_SA_JSON }}
           TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
           SENTRY_DSN: ''    # Sentry disabled in CI (no DSN); matches verify job
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: failure() && env.E2E_USER_EMAIL != ''
         with:
           name: playwright-report
           path: playwright-report/
