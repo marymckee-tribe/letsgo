@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { exchangeCode, SCOPES } from '@/lib/server/google-oauth'
+import { exchangeCode, SCOPES, verifyState } from '@/lib/server/google-oauth'
 import { createAccount } from '@/lib/server/accounts'
 
 export async function GET(req: Request) {
@@ -11,9 +11,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Missing code or state' }, { status: 400 })
   }
 
+  const verified = verifyState(state)
+  if (!verified) {
+    return NextResponse.json({ error: 'Invalid or expired state' }, { status: 400 })
+  }
+
   try {
     const { refreshToken, email } = await exchangeCode(code)
-    await createAccount(state, {
+    await createAccount(verified.uid, {
       email,
       refreshToken,
       scopes: SCOPES,
