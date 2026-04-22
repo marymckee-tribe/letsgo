@@ -91,6 +91,20 @@ export type EmailClassification =
 
 export type EmailHubStatus = "UNREAD" | "READ" | "CLEARED"
 
+// Map legacy server action type strings to new EmailActionType names
+const mapActionType = (raw: string): EmailActionType => {
+  if (raw === 'CALENDAR_INVITE' || raw === 'CALENDAR_EVENT') return 'CALENDAR_EVENT'
+  if (raw === 'TODO_ITEM' || raw === 'TODO') return 'TODO'
+  return 'NEEDS_REPLY'
+}
+
+// Map legacy server status strings to new EmailActionStatus names
+const mapActionStatus = (raw: string | undefined): EmailActionStatus => {
+  if (raw === 'APPROVED' || raw === 'COMMITTED') return 'COMMITTED'
+  if (raw === 'DISMISSED') return 'DISMISSED'
+  return 'PROPOSED'
+}
+
 export type Email = {
   id: string
   accountId?: string
@@ -240,24 +254,15 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   const emails = useMemo<Email[]>(() => {
     if (!inboxData?.emails) return []
     return inboxData.emails.map((e) => {
-      // Map legacy server action type strings to new EmailActionType names
-      const mapActionType = (raw: string): EmailActionType => {
-        if (raw === 'CALENDAR_INVITE' || raw === 'CALENDAR_EVENT') return 'CALENDAR_EVENT'
-        if (raw === 'TODO_ITEM' || raw === 'TODO') return 'TODO'
-        return 'NEEDS_REPLY'
-      }
-      // Map legacy server status strings to new EmailActionStatus names
-      const mapActionStatus = (raw: string | undefined): EmailActionStatus => {
-        if (raw === 'APPROVED' || raw === 'COMMITTED') return 'COMMITTED'
-        if (raw === 'DISMISSED') return 'DISMISSED'
-        return 'PROPOSED'
-      }
       return {
         id: e.id,
         accountId: (e as { accountId?: string }).accountId,
         accountEmail: (e as { accountEmail?: string }).accountEmail,
         subject: e.subject,
         sender: e.sender,
+        // TODO(P2 Task 10): classification/hubStatus come from the AI digest once the
+        // server router is rewritten. Until then, every email defaults to FYI/UNREAD
+        // regardless of true classification or Gmail read-state.
         classification: 'FYI' as EmailClassification,
         snippet: e.snippet,
         fullBody: (e as { fullBody?: string }).fullBody ?? '',
