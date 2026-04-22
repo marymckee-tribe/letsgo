@@ -133,8 +133,6 @@ interface HubState {
   addTask: (task: Task) => void
   addGrocery: (item: GroceryItem) => void
   toggleTask: (id: string) => void
-  actOnEmailAction: (emailId: string, actionId: string) => void
-  dismissEmailAction: (emailId: string, actionId: string) => void
   setEventTitle: (id: string, title: string) => void
   setEventTime: (id: string, time: string) => void
   setEventLocation: (id: string, location: string) => void
@@ -380,56 +378,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     setAdditionalTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t))
   }
 
-  const actOnEmailAction = (emailId: string, actionId: string) => {
-    let actionItem: EmailAction | null = null
-
-    setEmailOverrides(prev => {
-      const currentActions = prev.has(emailId)
-        ? prev.get(emailId)!
-        : (emails.find(e => e.id === emailId)?.suggestedActions ?? [])
-
-      const updated = currentActions.map(a => {
-        if (a.id === actionId) {
-          actionItem = a
-          return { ...a, status: "COMMITTED" as const }
-        }
-        return a
-      })
-
-      const next = new Map(prev)
-      next.set(emailId, updated)
-      return next
-    })
-
-    if (actionItem) {
-      const act = actionItem as EmailAction
-      if (act.type === 'CALENDAR_EVENT') {
-        addEvent({ id: Math.random().toString(), title: act.title, time: act.time || "12:00", date: act.date || 1, fromEmail: true })
-      } else if (act.type === 'TODO') {
-        addTask({ id: Math.random().toString(), title: act.title, context: act.context || "PERSONAL", completed: false })
-      }
-    }
-  }
-
-  const dismissEmailAction = (emailId: string, actionId: string) => {
-    setEmailOverrides(prev => {
-      const currentActions = prev.has(emailId)
-        ? prev.get(emailId)!
-        : (emails.find(e => e.id === emailId)?.suggestedActions ?? [])
-
-      const updated = currentActions.map(a =>
-        a.id === actionId ? { ...a, status: "DISMISSED" as const } : a
-      )
-
-      const next = new Map(prev)
-      next.set(emailId, updated)
-      return next
-    })
-    toast("SYSTEM", { description: "Action dismissed." })
-  }
-
   return (
-    <HubContext.Provider value={{ events, scheduleInsights, tasks, groceries, emails, profiles, addEvent, addTask, addGrocery, toggleTask, actOnEmailAction, dismissEmailAction, setEventTitle, setEventTime, setEventLocation, setEventNotes, toggleGrocery, appendKnownDomain }}>
+    <HubContext.Provider value={{ events, scheduleInsights, tasks, groceries, emails, profiles, addEvent, addTask, addGrocery, toggleTask, setEventTitle, setEventTime, setEventLocation, setEventNotes, toggleGrocery, appendKnownDomain }}>
       {children}
     </HubContext.Provider>
   )
@@ -439,4 +389,58 @@ export function useHub() {
   const context = useContext(HubContext)
   if (!context) throw new Error("useHub must be used within HubProvider")
   return context
+}
+
+export function useInboxEmails() {
+  return trpc.inbox.digest.useQuery(undefined, { staleTime: 60_000 })
+}
+
+export function useClearEmail() {
+  const utils = trpc.useUtils()
+  return trpc.inbox.markCleared.useMutation({
+    async onMutate({ id }) {
+      await utils.inbox.digest.cancel()
+      const previous = utils.inbox.digest.getData()
+      utils.inbox.digest.setData(undefined, (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          emails: old.emails.map((e) => (e.id === id ? { ...e, hubStatus: 'CLEARED' as const } : e)),
+        }
+      })
+      return { previous }
+    },
+    onError(_err, _input, ctx) {
+      if (ctx?.previous) utils.inbox.digest.setData(undefined, ctx.previous)
+      toast('SYNC ERROR', { description: 'Could not clear email. Restored.' })
+    },
+    onSettled() {
+      utils.inbox.digest.invalidate()
+    },
+  })
+}
+
+export function useRestoreEmail() {
+  const utils = trpc.useUtils()
+  return trpc.inbox.markUnread.useMutation({
+    async onMutate({ id }) {
+      await utils.inbox.digest.cancel()
+      const previous = utils.inbox.digest.getData()
+      utils.inbox.digest.setData(undefined, (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          emails: old.emails.map((e) => (e.id === id ? { ...e, hubStatus: 'UNREAD' as const } : e)),
+        }
+      })
+      return { previous }
+    },
+    onError(_err, _input, ctx) {
+      if (ctx?.previous) utils.inbox.digest.setData(undefined, ctx.previous)
+      toast('SYNC ERROR', { description: 'Could not restore email.' })
+    },
+    onSettled() {
+      utils.inbox.digest.invalidate()
+    },
+  })
 }
