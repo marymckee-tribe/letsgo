@@ -10,6 +10,8 @@ const config = {
   testMatch: ['<rootDir>/tests/**/*.test.ts', '<rootDir>/tests/**/*.test.tsx'],
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: { jsx: 'react-jsx', esModuleInterop: true } }],
+    '^.+\\.js$': ['ts-jest', { tsconfig: { jsx: 'react-jsx', esModuleInterop: true } }],
   },
+  transformIgnorePatterns: ['/node_modules/(?!(superjson|copy-anything|is-what)/)'],
 }
 export default config
