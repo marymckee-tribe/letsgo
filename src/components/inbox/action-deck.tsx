@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { motion } from "framer-motion"
 import type { EmailAction } from "@/lib/store"
 import { ActionCard } from "./action-card"
 
@@ -28,11 +29,18 @@ export function ActionDeck({ actions }: Props) {
           No suggested actions
         </p>
       ) : (
-        <div className="flex flex-col gap-6">
-          {visible.map((a) => (
-            <ActionCard key={a.id} action={a} onSkip={(id) => setDismissed((s) => new Set(s).add(id))} />
+        <motion.div layout className="flex flex-col gap-6">
+          {visible.map((a, i) => (
+            <motion.div
+              key={a.id}
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.18, delay: i * 0.04 }}
+            >
+              <ActionCard action={a} onSkip={(id) => setDismissed((s) => new Set(s).add(id))} />
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       )}
     </div>
   )
