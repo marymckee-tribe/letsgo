@@ -41,6 +41,26 @@ The exact key depends on your Web API Key value. To find it:
 
 The fixture throws intentionally until this step is done — better than a silently unauthenticated test run.
 
+## SECURITY: failure-artifact trace sensitivity
+
+Playwright is configured with `trace: 'retain-on-failure'`. Traces capture
+browser-side network traffic (CDP) and `page.request` / `APIRequestContext`
+calls. The `signIn` helper in `auth-fixture.ts` uses the **Node.js global
+`fetch()`**, which runs in the test-runner process, not inside the browser
+context — so the Firebase sign-in request (including the plaintext password and
+the returned `idToken`/`refreshToken`) is **not** recorded in Playwright traces
+today.
+
+**However:** any future change that routes the sign-in call through
+`page.request`, `request.newContext()`, or `context.request` would bring it
+back into trace scope and expose those credentials in CI failure artifacts
+(retained for 7 days in GitHub Actions). If you ever refactor the fixture to use
+a `page`-bound API, review this risk first and consider stubbing the Firebase
+endpoint with `page.route()` or redacting the artifact before upload.
+
+Do not share failure-run playwright-report artifacts outside the team — they
+contain session tokens from the dedicated E2E test account.
+
 ## Running locally
 
 ```bash

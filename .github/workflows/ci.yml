@@ -45,6 +45,7 @@ jobs:
           FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
           FIREBASE_ADMIN_SA_JSON: ${{ secrets.FIREBASE_ADMIN_SA_JSON }}
           TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+          SENTRY_DSN: ''    # Sentry disabled in CI (no DSN); matches verify job
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
