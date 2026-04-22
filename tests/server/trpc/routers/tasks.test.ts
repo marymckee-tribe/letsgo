@@ -1,4 +1,5 @@
 import { tasksRouter } from '@/server/trpc/routers/tasks'
+import { mockCtx } from '../helpers'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchTasks } from '@/lib/server/tasks-fetcher'
@@ -17,7 +18,7 @@ describe('tasks router', () => {
   })
 
   it('list returns Google Tasks entries tagged with accountId', async () => {
-    const caller = tasksRouter.createCaller({ uid: 'mary-uid' })
+    const caller = tasksRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { tasks } = await caller.list()
     expect(tasks).toHaveLength(1)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -26,7 +27,7 @@ describe('tasks router', () => {
   })
 
   it('list rejects unauthenticated callers', async () => {
-    const caller = tasksRouter.createCaller({})
+    const caller = tasksRouter.createCaller(mockCtx())
     await expect(caller.list()).rejects.toThrow()
   })
 })

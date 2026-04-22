@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { openai } from '@ai-sdk/openai'
 import { generateObject } from 'ai'
 import { router, protectedProcedure } from '../index'
+import { rateLimit } from '@/lib/server/rate-limit'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
@@ -24,7 +25,7 @@ const EmailSchema = z.object({
 })
 
 export const inboxRouter = router({
-  digest: protectedProcedure.query(async ({ ctx }) => {
+  digest: protectedProcedure.use(rateLimit({ max: 20, windowMs: 60_000 })).query(async ({ ctx }) => {
     const accounts = await listAccounts(ctx.uid)
     const perAccount = await Promise.all(accounts.map(async (acc) => {
       try {

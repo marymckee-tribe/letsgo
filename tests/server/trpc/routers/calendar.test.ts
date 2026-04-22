@@ -1,5 +1,6 @@
 // tests/server/trpc/routers/calendar.test.ts
 import { calendarRouter } from '@/server/trpc/routers/calendar'
+import { mockCtx } from '../helpers'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchCalendarEvents } from '@/lib/server/calendar-fetcher'
@@ -23,19 +24,19 @@ describe('calendar router', () => {
   })
 
   it('list returns events tagged with profileId=null when no mapping exists', async () => {
-    const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+    const caller = calendarRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { events } = await caller.list()
     expect(events).toHaveLength(1)
     expect(events[0].profileId).toBeNull()
   })
 
   it('list rejects unauthenticated callers', async () => {
-    const caller = calendarRouter.createCaller({})
+    const caller = calendarRouter.createCaller(mockCtx())
     await expect(caller.list()).rejects.toThrow()
   })
 
   it('list tags events with accountId', async () => {
-    const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+    const caller = calendarRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { events } = await caller.list()
     expect(events[0].accountId).toBe('a1')
   })
@@ -48,7 +49,7 @@ describe('calendar router', () => {
       { id: 'e1', title: 'Gymnastics', calendarId: 'cal-family' },
       { id: 'e2', title: 'Work Meeting', calendarId: 'cal-work' },
     ])
-    const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+    const caller = calendarRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { events } = await caller.list()
     expect(events).toHaveLength(2)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,14 +66,14 @@ describe('calendar router', () => {
       { id: 'e2', iCalUID: 'uid-abc', title: 'Event A (copy)', calendarId: 'cal2' },
       { id: 'e3', title: 'Event B', calendarId: 'cal1' },
     ])
-    const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+    const caller = calendarRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { events } = await caller.list()
     expect(events).toHaveLength(2)
   })
 
   it('list suppresses per-account errors and returns them in errors array', async () => {
     ;(getDecryptedRefreshToken as jest.Mock).mockResolvedValue(null)
-    const caller = calendarRouter.createCaller({ uid: 'mary-uid' })
+    const caller = calendarRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { events, errors } = await caller.list()
     expect(events).toHaveLength(0)
     expect(errors).toHaveLength(1)

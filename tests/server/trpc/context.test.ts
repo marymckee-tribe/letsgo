@@ -35,4 +35,12 @@ describe('createContext', () => {
     const ctx = await createContext({ req })
     expect(ctx.uid).toBeUndefined()
   })
+
+  it('always attaches logger and reqId', async () => {
+    const req = new Request('http://x/api/trpc/accounts.list')
+    const ctx = await createContext({ req })
+    expect(ctx.logger).toBeDefined()
+    expect(typeof ctx.reqId).toBe('string')
+    expect(ctx.reqId.length).toBeGreaterThan(0)
+  })
 })

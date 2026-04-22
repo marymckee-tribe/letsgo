@@ -1,4 +1,5 @@
 import { inboxRouter } from '@/server/trpc/routers/inbox'
+import { mockCtx } from '../helpers'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
@@ -29,7 +30,7 @@ describe('inbox router', () => {
   })
 
   it('digest returns AI-digested emails tagged with accountId', async () => {
-    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    const caller = inboxRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { emails } = await caller.digest()
     expect(emails).toHaveLength(1)
     expect(emails[0].accountId).toBe('a1')
@@ -37,7 +38,7 @@ describe('inbox router', () => {
 
   it('digest short-circuits and returns empty array when no emails', async () => {
     ;(fetchUnreadPrimary as jest.Mock).mockResolvedValue([])
-    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    const caller = inboxRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { emails } = await caller.digest()
     expect(emails).toHaveLength(0)
     expect(aiModule.generateObject).not.toHaveBeenCalled()
@@ -62,19 +63,19 @@ describe('inbox router', () => {
         }],
       },
     })
-    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    const caller = inboxRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { emails } = await caller.digest()
     expect(emails[0].suggestedActions[0].status).toBe('PENDING')
   })
 
   it('digest tags emails with accountEmail', async () => {
-    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    const caller = inboxRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { emails } = await caller.digest()
     expect(emails[0].accountEmail).toBe('mary@tribe.ai')
   })
 
   it('digest rejects unauthenticated callers', async () => {
-    const caller = inboxRouter.createCaller({})
+    const caller = inboxRouter.createCaller(mockCtx())
     await expect(caller.digest()).rejects.toThrow()
   })
 
@@ -86,7 +87,7 @@ describe('inbox router', () => {
     ;(getDecryptedRefreshToken as jest.Mock).mockImplementation((uid: string, accId: string) =>
       accId === 'a1' ? Promise.resolve('rt') : Promise.resolve(null)
     )
-    const caller = inboxRouter.createCaller({ uid: 'mary-uid' })
+    const caller = inboxRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { emails } = await caller.digest()
     expect(emails).toHaveLength(1)
     expect(emails[0].accountId).toBe('a1')

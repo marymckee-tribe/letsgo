@@ -66,7 +66,7 @@ export const calendarsRouter = router({
           }))
         } catch (err: unknown) {
           const e = err as { message?: string }
-          console.warn(`[calendars] skipping account ${acc.id}: ${e.message ?? 'unknown error'}`)
+          ctx.logger.warn({ accountId: acc.id, error: e.message ?? 'unknown error' }, 'calendars: skipping account')
           return []
         }
       }),
