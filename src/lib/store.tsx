@@ -108,20 +108,20 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   const [groceries, setGroceries] = useState<GroceryItem[]>(initialGroceries)
   const [emailOverrides, setEmailOverrides] = useState<Map<string, EmailAction[]>>(new Map())
   const [profiles] = useState<EntityProfile[]>(initialProfiles)
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
 
   // --- tRPC queries ---
 
   const { data: calendarData, error: calendarError } = trpc.calendar.list.useQuery(undefined, {
-    enabled: !!user,
+    enabled: !loading && !!user,
   })
 
   const { data: tasksData, error: tasksError } = trpc.tasks.list.useQuery(undefined, {
-    enabled: !!user,
+    enabled: !loading && !!user,
   })
 
   const { data: inboxData, error: inboxError } = trpc.inbox.digest.useQuery(undefined, {
-    enabled: !!user,
+    enabled: !loading && !!user,
   })
 
   // --- Error toasts ---
