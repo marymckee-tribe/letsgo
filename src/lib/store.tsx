@@ -140,6 +140,7 @@ interface HubState {
   setEventLocation: (id: string, location: string) => void
   setEventNotes: (id: string, notes: string) => void
   toggleGrocery: (id: string) => void
+  appendKnownDomain: (profileId: string, domain: string) => Promise<void>
 }
 
 const HubContext = createContext<HubState | undefined>(undefined)
@@ -148,21 +149,12 @@ const initialGroceries: GroceryItem[] = [
   { id: "1", name: "Milk" }
 ]
 
-const initialProfiles: EntityProfile[] = [
-  { id: "mary", name: "Mary", type: "Adult", currentContext: "Focused on the architecture phase for the Family OS. Organizing upcoming travel logistics.", preferences: ["V60 Coffee", "Window seats", "Minimalist aesthetics"], routines: ["Morning deep work 8-11am"], sizes: {}, medicalNotes: "" },
-  { id: "doug", name: "Doug", type: "Adult", currentContext: "Preparing for Q2 board meetings.", preferences: ["Espresso", "Aisle seats"], routines: [], sizes: {}, medicalNotes: "" },
-  { id: "ellie", name: "Ellie", type: "Child", currentContext: "Getting ready for middle school transition. Needs new gymnastics gear for the upcoming season.", preferences: ["Gymnastics", "Pasta"], routines: ["Tues/Thurs Gymnastics 4pm"], sizes: { "Shoe": "4 Youth", "Shirt": "Medium Youth" }, medicalNotes: "Peanut allergy" },
-  { id: "annie", name: "Annie", type: "Child", currentContext: "Starting the new art program this week.", preferences: ["Painting", "Mac & Cheese"], routines: ["Wed Art Class 3:30pm"], sizes: { "Shoe": "2 Youth" }, medicalNotes: "" },
-  { id: "ness", name: "Ness", type: "Pet", currentContext: "Due for annual vet checkup next month.", preferences: ["Salmon treats"], routines: ["Morning walk 7am", "Evening walk 6pm"], sizes: {}, medicalNotes: "Sensitive stomach" },
-]
-
 export function HubProvider({ children }: { children: React.ReactNode }) {
   const [additionalEvents, setAdditionalEvents] = useState<CalendarEvent[]>([])
   const [scheduleInsights] = useState<string[]>([])
   const [additionalTasks, setAdditionalTasks] = useState<Task[]>([])
   const [groceries, setGroceries] = useState<GroceryItem[]>(initialGroceries)
   const [emailOverrides, setEmailOverrides] = useState<Map<string, EmailAction[]>>(new Map())
-  const [profiles] = useState<EntityProfile[]>(initialProfiles)
   const { user, loading } = useAuth()
 
   // --- tRPC queries ---
@@ -176,6 +168,10 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   })
 
   const { data: inboxData, error: inboxError } = trpc.inbox.digest.useQuery(undefined, {
+    enabled: !loading && !!user,
+  })
+
+  const { data: profilesData, error: profilesError } = trpc.profiles.list.useQuery(undefined, {
     enabled: !loading && !!user,
   })
 
@@ -198,6 +194,12 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       toast("SYNC ERROR", { description: "Gmail: " + inboxError.message })
     }
   }, [inboxError])
+
+  useEffect(() => {
+    if (profilesError) {
+      toast("SYNC ERROR", { description: "Profiles: " + profilesError.message })
+    }
+  }, [profilesError])
 
   // --- Derived state via useMemo ---
 
@@ -286,7 +288,22 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     })
   }, [inboxData, emailOverrides])
 
+  const profiles = useMemo<EntityProfile[]>(() => {
+    if (!profilesData?.profiles) return []
+    return profilesData.profiles as unknown as EntityProfile[]
+  }, [profilesData])
+
   // --- Mutations ---
+
+  const utils = trpc.useUtils()
+  const learnDomainMutation = trpc.profiles.learnDomain.useMutation({
+    onSuccess: () => utils.profiles.list.invalidate(),
+    onError: (e) => toast("ERROR", { description: e.message }),
+  })
+
+  const appendKnownDomain = async (profileId: string, domain: string) => {
+    await learnDomainMutation.mutateAsync({ profileId, domain })
+  }
 
   const addEvent = (event: CalendarEvent) => {
     setAdditionalEvents(prev => prev.some(e => e.id === event.id) ? prev : [...prev, event])
@@ -411,7 +428,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <HubContext.Provider value={{ events, scheduleInsights, tasks, groceries, emails, profiles, addEvent, addTask, addGrocery, toggleTask, actOnEmailAction, dismissEmailAction, setEventTitle, setEventTime, setEventLocation, setEventNotes, toggleGrocery }}>
+    <HubContext.Provider value={{ events, scheduleInsights, tasks, groceries, emails, profiles, addEvent, addTask, addGrocery, toggleTask, actOnEmailAction, dismissEmailAction, setEventTitle, setEventTime, setEventLocation, setEventNotes, toggleGrocery, appendKnownDomain }}>
       {children}
     </HubContext.Provider>
   )
