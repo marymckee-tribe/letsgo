@@ -20,9 +20,7 @@ export const calendarRouter = router({
         const { accessToken } = await refreshAccessToken(rt)
         const events = await fetchCalendarEvents(accessToken)
         return events.map(e => {
-          const ev = e as { calendarId?: string }
-          const calId = ev.calendarId
-          const profileId = calId !== undefined && mappingMap.has(calId) ? (mappingMap.get(calId) ?? null) : null
+          const profileId = mappingMap.has(e.calendarId) ? (mappingMap.get(e.calendarId) ?? null) : null
           return { ...e, accountId: acc.id, profileId }
         })
       } catch (err: unknown) {
@@ -34,8 +32,7 @@ export const calendarRouter = router({
     const errors = results.flatMap(r => (!Array.isArray(r) && '_error' in r ? [r._error] : []))
     const seen = new Set<string>()
     const events = allEvents.filter(e => {
-      const ev = e as { id?: string; iCalUID?: string }
-      const dedupeKey = ev.iCalUID || ev.id
+      const dedupeKey = e.iCalUID || e.id
       if (!dedupeKey || seen.has(dedupeKey)) return false
       seen.add(dedupeKey)
       return true

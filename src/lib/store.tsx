@@ -205,15 +205,16 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   const serverEvents = useMemo<CalendarEvent[]>(() => {
     if (!calendarData?.events) return []
-    return (calendarData.events as unknown as { id: string; title: string; start: string; location?: string; profileId?: string | null }[]).map((e) => {
-      const isAllDay = !e.start.includes('T')
-      const startDate = new Date(e.start)
+    return calendarData.events.map((e) => {
+      const start = e.start ?? ''
+      const isAllDay = !start.includes('T')
+      const startDate = new Date(start)
       const time = isAllDay
         ? 'All day'
         : startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })
       return {
         id: e.id,
-        title: e.title,
+        title: e.title ?? '',
         time,
         date: startDate.getDate(),
         location: e.location,
@@ -233,9 +234,9 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   const serverTasks = useMemo<Task[]>(() => {
     if (!tasksData?.tasks) return []
-    return (tasksData.tasks as unknown as { id: string; title: string; completed: boolean }[]).map((t) => ({
+    return tasksData.tasks.map((t) => ({
       id: t.id,
-      title: t.title,
+      title: t.title ?? '',
       context: 'PERSONAL',
       completed: t.completed,
     }))
@@ -290,7 +291,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   const profiles = useMemo<EntityProfile[]>(() => {
     if (!profilesData?.profiles) return []
-    return profilesData.profiles as unknown as EntityProfile[]
+    return profilesData.profiles
   }, [profilesData])
 
   // --- Mutations ---

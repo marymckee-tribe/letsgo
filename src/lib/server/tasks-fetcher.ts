@@ -1,9 +1,17 @@
 // src/lib/server/tasks-fetcher.ts
 
-interface TaskList { id: string }
-interface Task { id: string; title?: string; due?: string; status?: string }
+export interface TaskRaw {
+  id: string
+  title: string | undefined
+  due: string | undefined
+  completed: boolean
+  listId: string
+}
 
-export async function fetchTasks(accessToken: string): Promise<Record<string, unknown>[]> {
+interface TaskList { id: string }
+interface GoogleTask { id: string; title?: string; due?: string; status?: string }
+
+export async function fetchTasks(accessToken: string): Promise<TaskRaw[]> {
   const listsRes = await fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -16,7 +24,7 @@ export async function fetchTasks(accessToken: string): Promise<Record<string, un
       headers: { Authorization: `Bearer ${accessToken}` },
     })
     const td = await tr.json()
-    return (td.items || []).map((t: Task) => ({
+    return (td.items || []).map((t: GoogleTask): TaskRaw => ({
       id: t.id,
       title: t.title,
       due: t.due,
