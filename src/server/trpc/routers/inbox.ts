@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import { openai } from '@ai-sdk/openai'
 import { generateObject } from 'ai'
 import { router, protectedProcedure } from '../index'
@@ -6,27 +5,24 @@ import { rateLimit } from '@/lib/server/rate-limit'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
+import { seedProfilesIfEmpty } from '@/lib/server/profiles'
+import { resolveDirectSenderIdentity } from '@/lib/server/sender-identity'
+import {
+  buildDigestPrompt,
+  type PreResolvedIdentity,
+  type PromptRawEmail,
+} from '@/lib/server/digest-prompt'
+import { ClassifiedEmailsSchema } from '@/lib/server/classification-schema'
 
-const EmailSchema = z.object({
-  emails: z.array(z.object({
-    id: z.string(),
-    subject: z.string(),
-    sender: z.string(),
-    snippet: z.string(),
-    suggestedActions: z.array(z.object({
-      id: z.string(),
-      type: z.enum(['CALENDAR_INVITE', 'TODO_ITEM']),
-      title: z.string(),
-      date: z.number().nullable(),
-      time: z.string().nullable(),
-      context: z.enum(['WORK', 'PERSONAL', 'FAMILY', 'KID 1', 'KID 2']).nullable(),
-    })),
-  })),
-})
+const DEFAULT_TIMEZONE = process.env.HUB_DEFAULT_TIMEZONE ?? 'America/New_York'
 
 export const inboxRouter = router({
   digest: protectedProcedure.use(rateLimit({ max: 20, windowMs: 60_000 })).query(async ({ ctx }) => {
-    const accounts = await listAccounts(ctx.uid)
+    const [accounts, profiles] = await Promise.all([
+      listAccounts(ctx.uid),
+      seedProfilesIfEmpty(ctx.uid),
+    ])
+
     const perAccount = await Promise.all(accounts.map(async (acc) => {
       try {
         const rt = await getDecryptedRefreshToken(ctx.uid, acc.id)
@@ -41,22 +37,62 @@ export const inboxRouter = router({
     const rawEmails = perAccount.flat()
     if (rawEmails.length === 0) return { emails: [] }
 
-    const prompt = `You are a Chief of Staff AI. Extract and clean the following emails into high-signal summaries. Strip all noise. Identify embedded instructions requiring physical execution and structure them into the suggestedActions array.\n\nEmails:\n${JSON.stringify(rawEmails, null, 2)}`
+    const preResolved: Record<string, PreResolvedIdentity | null> = {}
+    for (const e of rawEmails) {
+      preResolved[e.id] = resolveDirectSenderIdentity(e.sender, profiles)
+    }
+
+    const promptRawEmails: PromptRawEmail[] = rawEmails.map(e => ({
+      id: e.id,
+      subject: e.subject,
+      sender: e.sender,
+      snippet: e.snippet,
+      fullBody: e.fullBody,
+      date: e.date,
+      accountId: e.accountId,
+    }))
+
+    const prompt = buildDigestPrompt({
+      rawEmails: promptRawEmails,
+      profiles,
+      preResolved,
+      now: new Date(),
+      timeZone: DEFAULT_TIMEZONE,
+    })
+
     const { object } = await generateObject({
       model: openai('gpt-4o-mini'),
-      schema: EmailSchema,
+      schema: ClassifiedEmailsSchema,
       prompt,
     })
 
+    const byId = new Map(rawEmails.map(r => [r.id, r]))
     const digested = object.emails.map(ai => {
-      const raw = rawEmails.find(r => r.id === ai.id) || rawEmails[0]
+      const raw = byId.get(ai.id) ?? rawEmails[0]
       return {
-        ...ai,
-        suggestedActions: ai.suggestedActions.map(a => ({ ...a, status: 'PENDING' as const })),
+        id: ai.id,
+        classification: ai.classification,
+        snippet: ai.snippet,
+        senderIdentity: ai.senderIdentity,
+        suggestedActions: ai.suggestedActions.map(a => ({
+          id: a.id,
+          type: a.type,
+          title: a.title,
+          date: a.date ?? undefined,
+          time: a.time ?? undefined,
+          context: a.context ?? undefined,
+          sourceQuote: a.sourceQuote,
+          confidence: a.confidence,
+          status: 'PROPOSED' as const,
+        })),
         fullBody: raw.fullBody,
+        attachments: raw.attachments ?? [],
+        sender: raw.sender,
+        subject: raw.subject,
         date: raw.date,
         accountId: raw.accountId,
         accountEmail: raw.accountEmail,
+        hubStatus: 'UNREAD' as const,
       }
     })
 
