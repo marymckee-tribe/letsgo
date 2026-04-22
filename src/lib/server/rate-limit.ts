@@ -6,11 +6,50 @@ export interface BucketStore {
   set(key: string, value: { remaining: number; resetAt: number }): void
 }
 
-export function createBucketStore(): BucketStore {
-  const map = new Map<string, { remaining: number; resetAt: number }>()
+const SWEEP_INTERVAL_WRITES = 100
+const MAX_BUCKETS = 10_000
+
+interface StoreOpts {
+  maxBuckets?: number
+  sweepInterval?: number
+}
+
+interface MapWithCounter {
+  map: Map<string, { remaining: number; resetAt: number }>
+  writesSinceSweep: number
+}
+
+export function createBucketStore(opts: StoreOpts = {}): BucketStore {
+  const maxBuckets = opts.maxBuckets ?? MAX_BUCKETS
+  const sweepInterval = opts.sweepInterval ?? SWEEP_INTERVAL_WRITES
+  const state: MapWithCounter = { map: new Map(), writesSinceSweep: 0 }
+
+  const sweepExpired = (now: number) => {
+    for (const [k, v] of state.map) {
+      if (v.resetAt <= now) state.map.delete(k)
+    }
+    state.writesSinceSweep = 0
+  }
+
+  const enforceCap = () => {
+    if (state.map.size <= maxBuckets) return
+    // Evict oldest-inserted (Map preserves insertion order)
+    const overflow = state.map.size - maxBuckets
+    let i = 0
+    for (const k of state.map.keys()) {
+      if (i++ >= overflow) break
+      state.map.delete(k)
+    }
+  }
+
   return {
-    get: (k) => map.get(k),
-    set: (k, v) => { map.set(k, v) },
+    get: (k) => state.map.get(k),
+    set: (k, v) => {
+      state.map.set(k, v)
+      state.writesSinceSweep++
+      if (state.writesSinceSweep >= sweepInterval) sweepExpired(v.resetAt - 1)
+      enforceCap()
+    },
   }
 }
 
