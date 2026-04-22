@@ -22,7 +22,7 @@ if (!isMock) {
   db = getFirestore(app);
 
   googleProvider = new GoogleAuthProvider();
-  // Scopes moved to server-side OAuth (see /api/auth/google/start).
+  // Scopes moved to server-side OAuth (see trpc.auth.google.start).
   // Firebase Auth is now used for user identity only.
 } else {
   db = {};
