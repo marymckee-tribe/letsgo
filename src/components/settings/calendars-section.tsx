@@ -60,7 +60,7 @@ export function CalendarsSection() {
 
   return (
     <section id="calendars" className="mb-12">
-      <h2 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-8 pb-2 border-b border-border">
+      <h2 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-8 pb-2 border-b border-border">
         Calendar Assignments
       </h2>
       {isLoading ? (

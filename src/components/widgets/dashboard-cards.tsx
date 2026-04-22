@@ -26,14 +26,14 @@ export function DashboardCards({ className }: { className?: string }) {
 
         <div className="flex-1 overflow-y-auto w-full border-t border-border pt-6 space-y-4">
            {events.length === 0 ? (
-              <p className="text-foreground/40 text-sm italic font-serif">No schedule blocks remaining today.</p>
+              <p className="text-muted-foreground text-sm italic font-serif">No schedule blocks remaining today.</p>
            ) : events.map((event) => (
             <Sheet key={event.id}>
               <SheetTrigger className="w-full text-left">
                  <div className="flex justify-between items-start group cursor-pointer border-b border-transparent hover:border-border pb-1 transition-colors">
                    <div className="flex flex-col">
                      <span className="text-foreground text-sm group-hover:underline decoration-1 underline-offset-4">{event.title}</span>
-                     {event.aiTravelBuffer && <span className="text-[10px] uppercase font-bold tracking-widest text-foreground/40 mt-1">[{event.aiTravelBuffer}]</span>}
+                     {event.aiTravelBuffer && <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground mt-1">[{event.aiTravelBuffer}]</span>}
                    </div>
                    <span className="text-muted-foreground text-xs tabular-nums mt-0.5">{event.time}</span>
                  </div>
@@ -48,13 +48,13 @@ export function DashboardCards({ className }: { className?: string }) {
                 </SheetHeader>
                 <div className="space-y-8">
                   <div>
-                    <h3 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-4">Event Context</h3>
+                    <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-4">Event Context</h3>
                     <div className="space-y-4 text-foreground text-sm">
                        <p className="flex items-center gap-4"><span className="w-1.5 h-1.5 bg-foreground shrink-0" /><span>Travel Estimate: {event.aiTravelBuffer || "None"}</span></p>
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-4">AI Prep Notes</h3>
+                    <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-4">AI Prep Notes</h3>
                     <p className="border-l-2 border-signal-ai/30 pl-4 py-1 text-foreground/80 font-serif italic text-sm">
                       {event.aiPrepSuggestion ? `"${event.aiPrepSuggestion}"` : '"Routine schedule block. No executive briefing required."'}
                     </p>
@@ -72,13 +72,13 @@ export function DashboardCards({ className }: { className?: string }) {
         <div className="flex-1 overflow-y-auto border-t border-border pt-6 space-y-4 pr-4">
 
           {tasks.length === 0 ? (
-             <p className="text-foreground/40 text-sm italic font-serif">All clear. No pending tasks.</p>
+             <p className="text-muted-foreground text-sm italic font-serif">All clear. No pending tasks.</p>
           ) : tasks.map((task) => (
             <Sheet key={task.id}>
               <SheetTrigger className="w-full text-left">
                 <div className="flex flex-col gap-2 cursor-pointer group">
                   <div className="flex items-start justify-between">
-                    <span onClick={() => toggleTask(task.id)} className={`text-lg group-hover:underline decoration-1 underline-offset-4 ${task.completed ? "line-through text-foreground/40" : "text-foreground"}`}>{task.title}</span>
+                    <span onClick={() => toggleTask(task.id)} className={`text-lg group-hover:underline decoration-1 underline-offset-4 ${task.completed ? "line-through text-muted-foreground" : "text-foreground"}`}>{task.title}</span>
                     <span className="border border-foreground px-2 py-0.5 text-[10px] font-bold tracking-widest uppercase">[{task.context}]</span>
                   </div>
                   <p className="text-muted-foreground text-sm line-clamp-1">Action required.</p>
@@ -92,7 +92,7 @@ export function DashboardCards({ className }: { className?: string }) {
                   </SheetDescription>
                 </SheetHeader>
                 <div className="space-y-8">
-                  <p className="text-sm uppercase tracking-widest font-semibold text-foreground/40">Status: {task.completed ? "COMPLETED" : "PENDING"}</p>
+                  <p className="text-sm uppercase tracking-widest font-semibold text-muted-foreground">Status: {task.completed ? "COMPLETED" : "PENDING"}</p>
                 </div>
               </SheetContent>
             </Sheet>
@@ -106,7 +106,7 @@ export function DashboardCards({ className }: { className?: string }) {
         <h2 className="font-heading text-2xl font-light tracking-tight mb-6 text-foreground">Provisions</h2>
         <div className="flex-1 overflow-y-auto border-t border-border pt-6 space-y-4">
           {groceries.length === 0 ? (
-             <p className="text-foreground/40 text-sm italic font-serif">Inventory is fully stocked.</p>
+             <p className="text-muted-foreground text-sm italic font-serif">Inventory is fully stocked.</p>
           ) : groceries.map((item) => (
              <div key={item.id} className="flex items-center gap-4">
                <div className="w-1.5 h-1.5 bg-foreground shrink-0" />

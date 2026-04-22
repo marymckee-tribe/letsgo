@@ -54,7 +54,7 @@ export function TaskSchedule({ className }: { className?: string }) {
             <p className="text-2xl font-serif italic text-foreground/20 leading-relaxed">All clear.</p>
             <button
               onClick={() => setShowCompleted(s => !s)}
-              className="text-[10px] uppercase tracking-[0.2em] text-foreground/20 font-bold mt-4 hover:text-foreground/40 transition-colors text-left"
+              className="text-[10px] uppercase tracking-[0.2em] text-foreground/20 font-bold mt-4 hover:text-muted-foreground transition-colors text-left"
             >
               {showCompleted ? "Hide" : "Show"} completed ({doneTasks.length})
             </button>

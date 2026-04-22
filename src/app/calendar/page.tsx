@@ -224,7 +224,7 @@ export default function CalendarPage() {
                 <button
                   type="button"
                   onClick={() => setAddingEvent(false)}
-                  className="text-[10px] uppercase tracking-[0.15em] font-bold px-4 py-2 text-foreground/40 hover:text-foreground border border-border transition-colors"
+                  className="text-[10px] uppercase tracking-[0.15em] font-bold px-4 py-2 text-muted-foreground hover:text-foreground border border-border transition-colors"
                 >
                   Cancel
                 </button>

@@ -32,7 +32,7 @@ export function MainNav() {
                 className={`text-xs uppercase tracking-[0.2em] transition-colors ${
                   isActive
                     ? "text-accent font-medium border-b border-accent pb-1"
-                    : "text-foreground/40 hover:text-foreground/80 pb-1"
+                    : "text-muted-foreground hover:text-foreground/80 pb-1"
                 }`}
               >
                 {link.label}

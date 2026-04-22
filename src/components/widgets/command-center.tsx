@@ -36,13 +36,13 @@ export function CommandCenter({ className }: { className?: string }) {
     <div className={`flex flex-col h-full ${className}`}>
       <div className="flex justify-between items-baseline mb-8">
         <h2 className="font-heading text-4xl font-light tracking-tighter text-foreground">Activity Flow</h2>
-        <button onClick={signOut} className="text-foreground/40 hover:text-foreground transition-colors text-[10px] uppercase font-bold tracking-widest border border-transparent hover:border-border px-2 py-1">Disconnect</button>
+        <button onClick={signOut} className="text-muted-foreground hover:text-foreground transition-colors text-[10px] uppercase font-bold tracking-widest border border-transparent hover:border-border px-2 py-1">Disconnect</button>
       </div>
       <div className="flex-1 relative border-l border-border p-0">
         <ScrollArea className="h-full w-full absolute inset-0 pl-8">
           <div className="space-y-12 pr-4">
             {logs.length === 0 ? (
-               <p className="text-foreground/40 text-sm italic font-serif">Awaiting system activity...</p>
+               <p className="text-muted-foreground text-sm italic font-serif">Awaiting system activity...</p>
             ) : (
                logs.map((log) => (
                  <div key={log.id} className="flex flex-col gap-1">

@@ -31,12 +31,12 @@ export default function SettingsPage() {
 
           <div className="w-64 shrink-0 flex flex-col gap-2 border-r border-border pr-8">
              <button className="text-left py-4 px-2 border-l-2 border-foreground font-medium tracking-tight text-xl flex items-center justify-between">
-               AI Rules <BrainCircuit className="w-5 h-5 text-foreground/40" />
+               AI Rules <BrainCircuit className="w-5 h-5 text-muted-foreground" />
              </button>
-             <button className="text-left py-4 px-2 border-l-2 border-transparent text-foreground/40 hover:text-foreground transition-colors font-medium tracking-tight text-xl flex items-center justify-between">
+             <button className="text-left py-4 px-2 border-l-2 border-transparent text-muted-foreground hover:text-foreground transition-colors font-medium tracking-tight text-xl flex items-center justify-between">
                Connected Apps <Database className="w-5 h-5" />
              </button>
-             <button className="text-left py-4 px-2 border-l-2 border-transparent text-foreground/40 hover:text-foreground transition-colors font-medium tracking-tight text-xl flex items-center justify-between">
+             <button className="text-left py-4 px-2 border-l-2 border-transparent text-muted-foreground hover:text-foreground transition-colors font-medium tracking-tight text-xl flex items-center justify-between">
                Privacy & Data <Shield className="w-5 h-5" />
              </button>
           </div>
@@ -47,7 +47,7 @@ export default function SettingsPage() {
 
             <CalendarsSection />
 
-            <h2 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-8 pb-2 border-b border-border">Active Inference Models</h2>
+            <h2 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-8 pb-2 border-b border-border">Active Inference Models</h2>
 
             <div className="space-y-8">
               {/* Inbox */}

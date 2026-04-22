@@ -20,7 +20,7 @@ export function Bouncer({ className }: { className?: string }) {
       <div className="flex-1 overflow-y-auto space-y-6 pr-4">
         <Accordion className="w-full">
            {emails.length === 0 ? (
-              <p className="text-foreground/40 text-sm italic font-serif">Inbox zero achieved.</p>
+              <p className="text-muted-foreground text-sm italic font-serif">Inbox zero achieved.</p>
            ) : emails.map(email => (
              <AccordionItem key={email.id} value={email.id} className="border border-border px-6 bg-card data-[state=open]:border-foreground transition-colors mb-4 group">
                <AccordionTrigger className="hover:no-underline py-6">
@@ -32,7 +32,7 @@ export function Bouncer({ className }: { className?: string }) {
                     )}
                     <div className="flex items-center justify-between w-full">
                       <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground group-data-[state=open]:text-foreground">From: {email.sender}</span>
-                      <span className="text-foreground/40 text-xs font-normal">Unread</span>
+                      <span className="text-muted-foreground text-xs font-normal">Unread</span>
                     </div>
                     <div className="flex items-center justify-between w-full pr-4">
                       <h3 className="text-xl font-normal tracking-tight text-foreground truncate pr-4">{email.subject}</h3>
