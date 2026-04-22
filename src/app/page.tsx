@@ -6,6 +6,7 @@ import { DashboardCards } from "@/components/widgets/dashboard-cards";
 export default function Home() {
   return (
     <main className="flex-1 min-h-screen w-full bg-background text-foreground flex flex-col">
+      <h1 className="sr-only">The Hub</h1>
       {/* 80% Data Area */}
       <div className="flex-1 p-12 lg:p-24 overflow-hidden">
         <div className="mx-auto max-w-[1600px] h-full grid grid-cols-1 lg:grid-cols-12 gap-16 lg:gap-24">
