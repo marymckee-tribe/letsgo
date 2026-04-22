@@ -1,14 +1,10 @@
-// src/app/api/inbox/digest/route.ts
-import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { openai } from '@ai-sdk/openai'
 import { generateObject } from 'ai'
-import { z } from 'zod'
-import { getUidFromRequest, HttpError } from '@/lib/server/session'
+import { router, protectedProcedure } from '../index'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
-
-export const maxDuration = 60
 
 const EmailSchema = z.object({
   emails: z.array(z.object({
@@ -27,14 +23,12 @@ const EmailSchema = z.object({
   })),
 })
 
-export async function POST(req: Request) {
-  try {
-    const uid = await getUidFromRequest(req)
-    const accounts = await listAccounts(uid)
-
+export const inboxRouter = router({
+  digest: protectedProcedure.query(async ({ ctx }) => {
+    const accounts = await listAccounts(ctx.uid)
     const perAccount = await Promise.all(accounts.map(async (acc) => {
       try {
-        const rt = await getDecryptedRefreshToken(uid, acc.id)
+        const rt = await getDecryptedRefreshToken(ctx.uid, acc.id)
         if (!rt) return []
         const { accessToken } = await refreshAccessToken(rt)
         const raw = await fetchUnreadPrimary(accessToken)
@@ -44,7 +38,7 @@ export async function POST(req: Request) {
       }
     }))
     const rawEmails = perAccount.flat()
-    if (rawEmails.length === 0) return NextResponse.json({ emails: [] })
+    if (rawEmails.length === 0) return { emails: [] }
 
     const prompt = `You are a Chief of Staff AI. Extract and clean the following emails into high-signal summaries. Strip all noise. Identify embedded instructions requiring physical execution and structure them into the suggestedActions array.\n\nEmails:\n${JSON.stringify(rawEmails, null, 2)}`
     const { object } = await generateObject({
@@ -65,10 +59,6 @@ export async function POST(req: Request) {
       }
     })
 
-    return NextResponse.json({ emails: digested })
-  } catch (e: unknown) {
-    const err = e as { status?: number; message?: string }
-    const status = e instanceof HttpError ? e.status : (err.status ?? 500)
-    return NextResponse.json({ error: err.message ?? 'Unknown error' }, { status })
-  }
-}
+    return { emails: digested }
+  }),
+})

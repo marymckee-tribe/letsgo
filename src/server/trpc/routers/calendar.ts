@@ -1,14 +1,13 @@
-// src/app/api/calendar/list/route.ts
-import { NextResponse } from 'next/server'
-import { getUidFromRequest, HttpError } from '@/lib/server/session'
+// src/server/trpc/routers/calendar.ts
+import { router, protectedProcedure } from '../index'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchCalendarEvents } from '@/lib/server/calendar-fetcher'
 import { listCalendarMappings } from '@/lib/server/calendar-mappings'
 
-export async function POST(req: Request) {
-  try {
-    const uid = await getUidFromRequest(req)
+export const calendarRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const uid = ctx.uid
     const accounts = await listAccounts(uid)
     const mappings = await listCalendarMappings(uid)
     const mappingMap = new Map<string, string | null>(
@@ -41,11 +40,6 @@ export async function POST(req: Request) {
       seen.add(dedupeKey)
       return true
     })
-    console.log(`[calendar/list] uid=${uid} accounts=${accounts.length} events=${events.length} (${allEvents.length - events.length} dupes collapsed via iCalUID) errors=${errors.length}`, errors)
-    return NextResponse.json({ events, errors })
-  } catch (e: unknown) {
-    const err = e as { status?: number; message?: string }
-    const status = e instanceof HttpError ? e.status : (err.status ?? 500)
-    return NextResponse.json({ error: err.message ?? 'Unknown error' }, { status })
-  }
-}
+    return { events, errors }
+  }),
+})
