@@ -1,3 +1,14 @@
+## Two-step activation warning
+
+Enabling E2E in CI requires two human actions — in this order:
+
+1. **Set the Firebase secrets** (E2E_USER_EMAIL, E2E_USER_PASSWORD, FIREBASE_WEB_API_KEY) in `.env.local` AND GitHub repo secrets.
+2. **Paste the exact Firebase localStorage key** into `auth-fixture.ts` (replacing the placeholder throw).
+
+If you do #1 without #2, the `e2e` CI job will run but every test will fail loudly on the placeholder throw. That's intended — a loud failure beats a silent unauthenticated pass. Complete both steps before the first CI run that would count.
+
+---
+
 # E2E Tests (Playwright)
 
 Smoke tests for authenticated UI flows. Blocked on three human actions before they will run:

@@ -30,7 +30,9 @@ export const inboxRouter = router({
         const { accessToken } = await refreshAccessToken(rt)
         const raw = await fetchUnreadPrimary(accessToken)
         return raw.map(r => ({ ...r, accountId: acc.id, accountEmail: acc.email }))
-      } catch {
+      } catch (err: unknown) {
+        const e = err as { message?: string }
+        ctx.logger.warn({ accountId: acc.id, error: e.message ?? 'unknown' }, 'inbox.digest: per-account fetch failed')
         return []
       }
     }))
@@ -68,6 +70,7 @@ export const inboxRouter = router({
 
     const byId = new Map(rawEmails.map(r => [r.id, r]))
     const digested = object.emails.map(ai => {
+      // TODO(phase-3+): decide — drop unmatched AI entries or log + fallback. Current fallback silently misassigns fullBody/date when the LLM hallucinates an id.
       const raw = byId.get(ai.id) ?? rawEmails[0]
       return {
         id: ai.id,
