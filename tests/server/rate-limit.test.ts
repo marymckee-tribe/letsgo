@@ -1,4 +1,7 @@
-import { tokenBucketAllow, createBucketStore } from '@/lib/server/rate-limit'
+import { TRPCError } from '@trpc/server'
+import { t } from '@/server/trpc'
+import { tokenBucketAllow, createBucketStore, rateLimit } from '@/lib/server/rate-limit'
+import { mockCtx } from './trpc/helpers'
 
 describe('tokenBucketAllow', () => {
   it('allows first N requests and rejects the N+1th within the window', () => {
@@ -60,5 +63,16 @@ describe('tokenBucketAllow', () => {
     expect(store.get('b')).toBeDefined()
     expect(store.get('c')).toBeDefined()
     expect(store.get('d')).toBeDefined()
+  })
+})
+
+describe('rateLimit middleware', () => {
+  it('throws if ctx.uid is missing (misuse on publicProcedure)', async () => {
+    const testRouter = t.router({
+      gated: t.procedure.use(rateLimit({ max: 10, windowMs: 60_000 })).query(() => 'ok'),
+    })
+    const caller = testRouter.createCaller(mockCtx({})) // no uid
+    await expect(caller.gated()).rejects.toBeInstanceOf(TRPCError)
+    await expect(caller.gated()).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' })
   })
 })

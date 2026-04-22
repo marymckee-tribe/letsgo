@@ -75,7 +75,13 @@ const sharedStore = createBucketStore()
 
 export function rateLimit({ max, windowMs }: { max: number; windowMs: number }) {
   return t.middleware(({ ctx, next }) => {
-    const key = `uid:${ctx.uid ?? 'anon'}`
+    if (!ctx.uid) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'rateLimit requires authentication — chain after protectedProcedure',
+      })
+    }
+    const key = `uid:${ctx.uid}`
     if (!tokenBucketAllow(sharedStore, key, { max, windowMs })) {
       throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded' })
     }
