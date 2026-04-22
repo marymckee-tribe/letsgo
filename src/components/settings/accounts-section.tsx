@@ -1,66 +1,29 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useAuth } from "@/lib/auth-provider"
+import { trpc } from "@/lib/trpc/client"
 import { toast } from "sonner"
 
-type Account = {
-  id: string
-  email: string
-  displayName?: string
-  addedAt: number
-  lastSyncedAt?: number
-}
-
 export function AccountsSection() {
-  const { getIdToken } = useAuth()
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(true)
+  const utils = trpc.useUtils()
 
-  const refresh = async () => {
-    setLoading(true)
-    const token = await getIdToken()
-    if (!token) { setAccounts([]); setLoading(false); return }
-    const res = await fetch('/api/accounts', { headers: { Authorization: `Bearer ${token}` } })
-    const data = await res.json()
-    setAccounts(data.accounts || [])
-    setLoading(false)
-  }
+  const { data, isLoading } = trpc.accounts.list.useQuery()
+  const accounts = data?.accounts ?? []
 
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      const token = await getIdToken()
-      if (cancelled) return
-      if (!token) { setAccounts([]); setLoading(false); return }
-      const res = await fetch('/api/accounts', { headers: { Authorization: `Bearer ${token}` } })
-      const data = await res.json()
-      if (cancelled) return
-      setAccounts(data.accounts || [])
-      setLoading(false)
-    }
-    load()
-    return () => { cancelled = true }
-  }, [getIdToken])
+  const removeMutation = trpc.accounts.remove.useMutation({
+    onSuccess: () => {
+      toast("SYSTEM", { description: "Account removed." })
+      utils.accounts.list.invalidate()
+    },
+  })
+
+  const { refetch: fetchAuthUrl } = trpc.auth.google.start.useQuery(undefined, {
+    enabled: false,
+  })
 
   const addAccount = async () => {
-    const token = await getIdToken()
-    if (!token) return
-    const res = await fetch('/api/auth/google/start', { headers: { Authorization: `Bearer ${token}` } })
-    const data = await res.json()
-    if (data.url) window.location.href = data.url
-  }
-
-  const removeAccount = async (id: string) => {
-    const token = await getIdToken()
-    if (!token) return
-    const res = await fetch(`/api/accounts?id=${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (res.ok) {
-      toast("SYSTEM", { description: "Account removed." })
-      await refresh()
+    const result = await fetchAuthUrl()
+    if (result.data?.url) {
+      window.location.href = result.data.url
     }
   }
 
@@ -69,7 +32,7 @@ export function AccountsSection() {
       <h2 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-8 pb-2 border-b border-border">
         Linked Google Accounts
       </h2>
-      {loading ? (
+      {isLoading ? (
         <p className="text-sm text-muted-foreground font-serif italic">Loading…</p>
       ) : accounts.length === 0 ? (
         <p className="text-sm text-muted-foreground font-serif italic mb-6">No accounts linked yet.</p>
@@ -85,7 +48,7 @@ export function AccountsSection() {
                 </div>
               </div>
               <button
-                onClick={() => removeAccount(a.id)}
+                onClick={() => removeMutation.mutate({ id: a.id })}
                 className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground hover:text-foreground border border-border px-3 py-1"
               >Remove</button>
             </li>

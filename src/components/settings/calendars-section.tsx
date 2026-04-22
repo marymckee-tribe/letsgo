@@ -1,61 +1,44 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useAuth } from "@/lib/auth-provider"
 import { useHub } from "@/lib/store"
-
-type CalendarItem = {
-  accountId: string
-  accountEmail: string
-  calendarId: string
-  calendarName: string
-  selected: boolean
-  profileId: string | null
-}
+import { trpc } from "@/lib/trpc/client"
 
 export function CalendarsSection() {
-  const { getIdToken } = useAuth()
+  const utils = trpc.useUtils()
   const { profiles } = useHub()
-  const [calendars, setCalendars] = useState<CalendarItem[]>([])
-  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      const token = await getIdToken()
-      if (cancelled) return
-      if (!token) { setCalendars([]); setLoading(false); return }
-      const res = await fetch('/api/calendars', { headers: { Authorization: `Bearer ${token}` } })
-      const data = await res.json()
-      if (cancelled) return
-      setCalendars(data.calendars || [])
-      setLoading(false)
-    }
-    load()
-    return () => { cancelled = true }
-  }, [getIdToken])
+  const { data, isLoading } = trpc.calendars.list.useQuery()
+  const calendars = data?.calendars ?? []
 
-  const handleProfileChange = async (cal: CalendarItem, profileId: string | null) => {
-    // Optimistic update
-    setCalendars(prev =>
-      prev.map(c => c.calendarId === cal.calendarId ? { ...c, profileId } : c),
-    )
-    const token = await getIdToken()
-    if (!token) return
-    await fetch('/api/calendars', {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        calendarId: cal.calendarId,
-        accountId: cal.accountId,
-        calendarName: cal.calendarName,
-        profileId,
-      }),
+  const updateMappingMutation = trpc.calendars.updateMapping.useMutation({
+    onSuccess: () => {
+      utils.calendars.list.invalidate()
+    },
+  })
+
+  const handleProfileChange = (
+    cal: { calendarId: string; accountId: string; calendarName: string },
+    profileId: string | null,
+  ) => {
+    // Optimistic update: immediately reflect the change in cached data
+    utils.calendars.list.setData(undefined, (old) => {
+      if (!old) return old
+      return {
+        calendars: old.calendars.map(c =>
+          c.calendarId === cal.calendarId ? { ...c, profileId } : c,
+        ),
+      }
+    })
+    updateMappingMutation.mutate({
+      calendarId: cal.calendarId,
+      accountId: cal.accountId,
+      calendarName: cal.calendarName,
+      profileId,
     })
   }
 
   // Group calendars by accountEmail
-  const grouped = calendars.reduce<Record<string, CalendarItem[]>>((acc, cal) => {
+  const grouped = calendars.reduce<Record<string, typeof calendars>>((acc, cal) => {
     const key = cal.accountEmail
     if (!acc[key]) acc[key] = []
     acc[key].push(cal)
@@ -67,7 +50,7 @@ export function CalendarsSection() {
       <h2 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-8 pb-2 border-b border-border">
         Calendar Assignments
       </h2>
-      {loading ? (
+      {isLoading ? (
         <p className="text-sm text-muted-foreground font-serif italic">Loading…</p>
       ) : calendars.length === 0 ? (
         <p className="text-sm text-muted-foreground font-serif italic mb-6">No calendars found. Link a Google account above.</p>
