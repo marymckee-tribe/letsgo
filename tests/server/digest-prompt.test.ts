@@ -39,7 +39,7 @@ describe('buildDigestPrompt', () => {
 
   it('includes the three action type names verbatim', () => {
     const prompt = buildDigestPrompt({ rawEmails, profiles, preResolved, now, timeZone: 'America/New_York' })
-    expect(prompt).toMatch(/action types.*CALENDAR_EVENT.*TODO.*NEEDS_REPLY/s)
+    expect(prompt).toMatch(/action types.*CALENDAR_EVENT.*TODO.*NEEDS_REPLY/is)
   })
 
   it('embeds each Life Graph profile with knownDomains', () => {

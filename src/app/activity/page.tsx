@@ -38,7 +38,7 @@ export default function ActivityPage() {
         <div className="flex-1 min-h-0 overflow-y-auto pr-8">
            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-border text-xs uppercase tracking-widest font-bold text-foreground/40">
+                <tr className="border-b border-border text-xs uppercase tracking-widest font-bold text-muted-foreground">
                   <th className="pb-4 font-normal">Timestamp</th>
                   <th className="pb-4 font-normal">System Actor</th>
                   <th className="pb-4 font-normal">Operation Hash</th>
@@ -48,7 +48,7 @@ export default function ActivityPage() {
               <tbody>
                 {logs.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="text-foreground/40 italic font-serif py-8">Awaiting initial system logs...</td>
+                    <td colSpan={4} className="text-muted-foreground italic font-serif py-8">Awaiting initial system logs...</td>
                   </tr>
                 ) : logs.map((log) => {
                   const date = new Date(log.timestamp)
@@ -66,7 +66,7 @@ export default function ActivityPage() {
                         </div>
                       </td>
                       <td className="py-4 align-top">
-                        <span className="text-[10px] uppercase font-mono bg-muted px-2 py-1 text-foreground/40 group-hover:text-muted-foreground transition-colors">
+                        <span className="text-[10px] uppercase font-mono bg-muted px-2 py-1 text-muted-foreground group-hover:text-muted-foreground transition-colors">
                           {log.id.slice(0, 12)}
                         </span>
                       </td>

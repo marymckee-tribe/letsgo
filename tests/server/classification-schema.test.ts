@@ -7,7 +7,7 @@ describe('ClassifiedEmailsSchema', () => {
         id: 'm1',
         classification: 'CALENDAR_EVENT',
         snippet: 'Zoo trip Thursday.',
-        senderIdentity: { personId: 'ellie', confidence: 'high' },
+        senderIdentity: { personId: 'ellie', orgName: null, confidence: 'high' },
         suggestedActions: [
           {
             id: 'a1',
@@ -51,6 +51,7 @@ describe('ClassifiedEmailsSchema', () => {
         id: 'm2',
         classification: 'NEWSLETTER',
         snippet: 'Weekly digest.',
+        senderIdentity: null,
         suggestedActions: [],
       }],
     }

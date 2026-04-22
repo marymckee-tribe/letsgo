@@ -56,7 +56,7 @@ export default function PlannerPage() {
                  >
                    <span className="font-medium tracking-tight text-xl">{category}</span>
                    {count > 0 && (
-                     <span className={`text-[10px] uppercase font-bold tracking-widest ${activeTab === category ? "text-background/60" : "text-foreground/40 group-hover:text-muted-foreground"}`}>
+                     <span className={`text-[10px] uppercase font-bold tracking-widest ${activeTab === category ? "text-background/60" : "text-muted-foreground group-hover:text-muted-foreground"}`}>
                        {count}
                      </span>
                    )}
@@ -69,7 +69,7 @@ export default function PlannerPage() {
           <div className="flex-1 flex flex-col border-l border-border pl-16 pr-8">
 
             <form onSubmit={handleAddTask} className="flex gap-4 items-center mb-12 shrink-0 border-b border-border pb-4">
-              <Plus className="w-6 h-6 text-foreground/40" />
+              <Plus className="w-6 h-6 text-muted-foreground" />
               <input
                 type="text"
                 value={newTaskInput}
@@ -86,12 +86,12 @@ export default function PlannerPage() {
 
               {/* Pending Queue */}
               <div>
-                <h3 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-6 flex items-center gap-3">
+                <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-6 flex items-center gap-3">
                   <ListTodo className="w-4 h-4" /> Action Required
                 </h3>
                 <div className="space-y-2">
                   {pendingTasks.length === 0 ? (
-                    <p className="text-foreground/40 italic font-serif pb-4">No pending actions in this domain.</p>
+                    <p className="text-muted-foreground italic font-serif pb-4">No pending actions in this domain.</p>
                   ) : pendingTasks.map(task => (
                     <div key={task.id} className="group flex items-start gap-6 border border-border/50 p-4 hover:border-border transition-colors cursor-pointer" onClick={() => toggleTask(task.id)}>
                       <button className="shrink-0 mt-0.5 text-foreground/20 hover:text-foreground transition-colors">
@@ -99,7 +99,7 @@ export default function PlannerPage() {
                       </button>
                       <div className="flex-1 flex justify-between items-start">
                         <span className="text-xl tracking-tight leading-none group-hover:underline underline-offset-4 decoration-1">{task.title}</span>
-                        <span className="shrink-0 border border-border px-2 py-0.5 text-[10px] uppercase font-bold tracking-widest text-foreground/40">[{task.context}]</span>
+                        <span className="shrink-0 border border-border px-2 py-0.5 text-[10px] uppercase font-bold tracking-widest text-muted-foreground">[{task.context}]</span>
                       </div>
                     </div>
                   ))}
@@ -109,7 +109,7 @@ export default function PlannerPage() {
               {/* Completed Log */}
               {completedTasks.length > 0 && (
                 <div className="border-t border-border pt-12">
-                  <h3 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-6 flex items-center gap-3">
+                  <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-6 flex items-center gap-3">
                     <Check className="w-4 h-4" /> Cleared
                   </h3>
                   <div className="space-y-2 opacity-50">
@@ -120,7 +120,7 @@ export default function PlannerPage() {
                         </button>
                         <div className="flex-1 flex justify-between items-start">
                           <span className="text-xl tracking-tight leading-none line-through">{task.title}</span>
-                          <span className="shrink-0 border border-border px-2 py-0.5 text-[10px] uppercase font-bold tracking-widest text-foreground/40">[{task.context}]</span>
+                          <span className="shrink-0 border border-border px-2 py-0.5 text-[10px] uppercase font-bold tracking-widest text-muted-foreground">[{task.context}]</span>
                         </div>
                       </div>
                     ))}

@@ -1,5 +1,6 @@
 import { openai } from '@ai-sdk/openai'
 import { generateObject } from 'ai'
+import { z } from 'zod'
 import { router, protectedProcedure } from '../index'
 import { rateLimit } from '@/lib/server/rate-limit'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
@@ -13,6 +14,7 @@ import {
   type PromptRawEmail,
 } from '@/lib/server/digest-prompt'
 import { ClassifiedEmailsSchema } from '@/lib/server/classification-schema'
+import { setHubStatus, getHubStatusMap } from '@/lib/server/inbox-status'
 
 const DEFAULT_TIMEZONE = process.env.HUB_DEFAULT_TIMEZONE ?? 'America/New_York'
 
@@ -68,7 +70,10 @@ export const inboxRouter = router({
       prompt,
     })
 
-    const byId = new Map(rawEmails.map(r => [r.id, r]))
+    const [byId, statusMap] = [
+      new Map(rawEmails.map(r => [r.id, r])),
+      await getHubStatusMap(ctx.uid),
+    ]
     const digested = object.emails.map(ai => {
       // TODO(phase-3+): decide — drop unmatched AI entries or log + fallback. Current fallback silently misassigns fullBody/date when the LLM hallucinates an id.
       const raw = byId.get(ai.id) ?? rawEmails[0]
@@ -76,7 +81,13 @@ export const inboxRouter = router({
         id: ai.id,
         classification: ai.classification,
         snippet: ai.snippet,
-        senderIdentity: ai.senderIdentity,
+        senderIdentity: ai.senderIdentity
+          ? {
+              confidence: ai.senderIdentity.confidence,
+              personId: ai.senderIdentity.personId ?? undefined,
+              orgName: ai.senderIdentity.orgName ?? undefined,
+            }
+          : undefined,
         suggestedActions: ai.suggestedActions.map(a => ({
           id: a.id,
           type: a.type,
@@ -95,10 +106,24 @@ export const inboxRouter = router({
         date: raw.date,
         accountId: raw.accountId,
         accountEmail: raw.accountEmail,
-        hubStatus: 'UNREAD' as const,
+        hubStatus: statusMap[ai.id]?.hubStatus ?? 'UNREAD',
       }
     })
 
     return { emails: digested }
   }),
+
+  markCleared: protectedProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      await setHubStatus(ctx.uid, input.id, 'CLEARED')
+      return { ok: true }
+    }),
+
+  markUnread: protectedProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      await setHubStatus(ctx.uid, input.id, 'UNREAD')
+      return { ok: true }
+    }),
 })

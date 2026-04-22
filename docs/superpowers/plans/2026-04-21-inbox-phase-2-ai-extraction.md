@@ -2388,7 +2388,7 @@ If any of the above fail, fix and retest before declaring Phase 2 complete.
 
 ## What's Next (Phase 3+)
 
-- **Phase 3:** UI redesign — three-pane `/inbox`, editable action cards (PROPOSED/EDITING only — no writes yet), Clear + Recently cleared, row treatments per classification. Drops `src/lib/action-compat.ts`. Introduces `trpc.inbox.markCleared.useMutation()` with optimistic cache updates. Plan: `docs/superpowers/plans/2026-04-21-inbox-phase-3-ui-redesign.md`.
+- **Phase 3:** ✅ Shipped. Three-pane /inbox, classification-driven row treatments, editable action cards (stubbed commits), Clear + Recently cleared via inbox.markCleared/markUnread, `?thread=` deep-link reader, contrast sweep, action-compat shim deleted. Plan: `docs/superpowers/plans/2026-04-21-inbox-phase-3-ui-redesign.md`.
 - **Phase 4:** Google write flow — new `actionsRouter` with `commitCalendar`, `commitTask`, `markEmailRead`; optimistic mutations with rollback on error; idempotency keys; double-click protection; duplicate detection.
 - **Phase 5:** PDF extraction with Life Graph pre-fill — new `attachmentsRouter.extract` procedure with lazy-on-open + Firestore cache.
 - **Phase 6:** Reply capability (`gmail.send`) — `inboxRouter.sendReply` mutation.

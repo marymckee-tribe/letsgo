@@ -37,17 +37,30 @@ Emit ONE classification per email from this enum:
 - FYI — informational, no action required
 - NEWSLETTER — subscription content; auto-dimmed by the UI
 
-Emit zero or more suggestedActions per email. action types are exactly:
-- CALENDAR_EVENT — fields: title, date (epoch milliseconds), time (12-hour "h:mm AM/PM"), context
-- TODO — fields: title, date (due, epoch milliseconds or null), context
-- NEEDS_REPLY — fields: title (the subject of the reply), context
+suggestedActions — emit per the rules below.
 
-WAITING_ON, FYI, and NEWSLETTER classifications MUST produce zero actions.
+Action types & fields:
+- CALENDAR_EVENT — title, date (epoch ms), time (12-hour "h:mm AM/PM"), context
+- TODO — title, date (due, epoch ms or null), context
+- NEEDS_REPLY — title (subject of the reply, typically "Re: <original subject>"), context
 
-Rules:
-- Every action MUST carry a sourceQuote — the exact sentence from the email that implied the action. Never paraphrase.
-- Every action MUST carry a confidence value: "high", "medium", or "low".
-- Never invent dates. If the email does not specify a date and you cannot infer one unambiguously, set date to null and use confidence "low".
+Emission rules (dedupe by type — never more than one action of the same type per email):
+1. NEWSLETTER classifications: emit zero actions.
+2. Every other classification: emit the type-specific action matching the classification when applicable:
+   - CALENDAR_EVENT → one CALENDAR_EVENT action with specific date/time
+   - TODO → one TODO action with the specific concrete task
+   - NEEDS_REPLY → one NEEDS_REPLY action
+3. ALSO, for every non-NEWSLETTER email: emit a NEEDS_REPLY action unless the sender is a no-reply address (sender contains "noreply", "no-reply", "donotreply", or similar). The user should be able to reply to virtually every email.
+4. ALSO, for every non-NEWSLETTER email: emit a TODO action describing what the user might plausibly do — e.g. "Follow up on X", "Review Y", "Confirm attendance". Skip ONLY when the email is purely informational with no conceivable user action (e.g. a generic system status notification).
+
+Type-specific actions from rule 2 are high-confidence; fallback actions from rules 3 and 4 are typically "low" confidence.
+
+Field requirements for every action:
+- sourceQuote — an exact sentence from the email that motivates the action. For fallback TODO/REPLY actions from rules 3/4, use the subject line or the most relevant sentence. Never paraphrase.
+- confidence — "high" | "medium" | "low".
+- Never invent dates. If the email doesn't specify a date and you cannot infer one unambiguously, set date to null and use confidence "low".
+
+Sender identity & dates:
 - Match the sender to a Life Graph profile (personId) or organization (orgName) when possible. If the user has pre-resolved an identity for an email id (provided below), use it as a strong hint but override if the email content clearly points elsewhere — mark confidence accordingly.
 - Dates you EMIT must be epoch milliseconds. Dates in the INPUT are rendered as ISO-8601 local-time strings with timezone offset — resolve relative references ("Thursday at 8am") against the "now" value provided and return the resulting instant as epoch milliseconds.
 `

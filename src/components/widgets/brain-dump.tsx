@@ -90,7 +90,7 @@ export function BrainDump({ className }: { className?: string }) {
           <span className="text-accent">◇</span>
           Terminal
           {messages.length > 0 && !isExpanded && (
-             <span className="text-foreground/40 text-[10px] uppercase font-mono tracking-widest leading-none mt-1 line-clamp-1">
+             <span className="text-muted-foreground text-[10px] uppercase font-mono tracking-widest leading-none mt-1 line-clamp-1">
                {messages[messages.length - 1].role === 'assistant' ? messages[messages.length - 1].content : "Processing..."}
              </span>
           )}

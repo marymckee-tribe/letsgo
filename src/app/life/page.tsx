@@ -34,7 +34,7 @@ export default function LifePage() {
                  className={`text-left px-6 py-4 transition-colors flex justify-between items-center group ${activeProfileId === profile.id ? "bg-foreground text-background" : "hover:bg-muted text-foreground"}`}
                >
                  <span className="font-medium tracking-tight text-xl">{profile.name}</span>
-                 <span className={`text-[10px] uppercase font-bold tracking-widest ${activeProfileId === profile.id ? "text-background/60" : "text-foreground/40 group-hover:text-muted-foreground"}`}>
+                 <span className={`text-[10px] uppercase font-bold tracking-widest ${activeProfileId === profile.id ? "text-background/60" : "text-muted-foreground group-hover:text-muted-foreground"}`}>
                    {profile.type}
                  </span>
                </button>
@@ -48,7 +48,7 @@ export default function LifePage() {
               <div className="mb-12">
                 <h2 className="font-heading text-5xl font-light tracking-tighter mb-6">{activeProfile.name}</h2>
                 <div className="bg-muted p-6 border-l-2 border-foreground">
-                  <h3 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-3">Current Context</h3>
+                  <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-3">Current Context</h3>
                   <p className="text-foreground/80 font-serif italic text-lg leading-relaxed">{activeProfile.currentContext}</p>
                 </div>
               </div>
@@ -56,7 +56,7 @@ export default function LifePage() {
               <div className="grid grid-cols-2 gap-12 mb-12">
                 {/* Preferences */}
                 <div>
-                  <h3 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-6 flex justify-between border-b border-border pb-2">
+                  <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-6 flex justify-between border-b border-border pb-2">
                     <span>Preferences & Interests</span>
                     <Plus className="w-4 h-4 cursor-pointer hover:text-foreground" />
                   </h3>
@@ -66,12 +66,12 @@ export default function LifePage() {
                          <span key={pref} className="border border-border px-3 py-1 text-sm">{pref}</span>
                        ))}
                     </div>
-                  ) : <p className="text-sm text-foreground/40 italic font-serif">No persistent preferences logged.</p>}
+                  ) : <p className="text-sm text-muted-foreground italic font-serif">No persistent preferences logged.</p>}
                 </div>
 
                 {/* Routines */}
                 <div>
-                  <h3 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-6 flex justify-between border-b border-border pb-2">
+                  <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-6 flex justify-between border-b border-border pb-2">
                     <span>Known Routines</span>
                     <Plus className="w-4 h-4 cursor-pointer hover:text-foreground" />
                   </h3>
@@ -84,24 +84,24 @@ export default function LifePage() {
                          </li>
                        ))}
                     </ul>
-                  ) : <p className="text-sm text-foreground/40 italic font-serif">No recurring routines active.</p>}
+                  ) : <p className="text-sm text-muted-foreground italic font-serif">No recurring routines active.</p>}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-12 mb-12">
                 {/* Logistics */}
                 <div>
-                  <h3 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-6 border-b border-border pb-2">Logistics & Sizes</h3>
+                  <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-6 border-b border-border pb-2">Logistics & Sizes</h3>
                   {Object.keys(activeProfile.sizes).length > 0 ? (
                     <div className="grid grid-cols-2 gap-y-4">
                        {Object.entries(activeProfile.sizes).map(([key, value]) => (
                          <div key={key}>
-                           <span className="block text-xs uppercase text-foreground/40">{key}</span>
+                           <span className="block text-xs uppercase text-muted-foreground">{key}</span>
                            <span className="text-foreground font-medium">{value}</span>
                          </div>
                        ))}
                     </div>
-                  ) : <p className="text-sm text-foreground/40 italic font-serif">No logistical sizes currently requested.</p>}
+                  ) : <p className="text-sm text-muted-foreground italic font-serif">No logistical sizes currently requested.</p>}
 
                   {activeProfile.medicalNotes && (
                     <div className="mt-8 bg-red-50 text-red-900 border border-red-200 p-4 flex gap-4 items-start">
@@ -116,7 +116,7 @@ export default function LifePage() {
 
                 {/* Asset Manager */}
                 <div>
-                  <h3 className="text-xs uppercase tracking-widest font-semibold text-foreground/40 mb-6 flex justify-between border-b border-border pb-2">
+                  <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-6 flex justify-between border-b border-border pb-2">
                     <span>Asset Manager</span>
                     <Plus className="w-4 h-4 cursor-pointer hover:text-foreground" />
                   </h3>
@@ -128,7 +128,7 @@ export default function LifePage() {
                        </div>
                        <div>
                          <span className="block text-sm font-medium text-foreground group-hover:underline">Identity / Passport.pdf</span>
-                         <span className="text-[10px] uppercase font-mono tracking-widest text-foreground/40">Secured • Drive</span>
+                         <span className="text-[10px] uppercase font-mono tracking-widest text-muted-foreground">Secured • Drive</span>
                        </div>
                     </div>
                     {activeProfile.type === "Child" && (
@@ -138,7 +138,7 @@ export default function LifePage() {
                          </div>
                          <div>
                            <span className="block text-sm font-medium text-foreground group-hover:underline">School Physical 2026.pdf</span>
-                           <span className="text-[10px] uppercase font-mono tracking-widest text-foreground/40">Secured • Uploaded 2w ago</span>
+                           <span className="text-[10px] uppercase font-mono tracking-widest text-muted-foreground">Secured • Uploaded 2w ago</span>
                          </div>
                       </div>
                     )}

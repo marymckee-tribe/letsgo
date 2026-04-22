@@ -13,9 +13,13 @@ export const ACTION_TYPE_VALUES = ['CALENDAR_EVENT', 'TODO', 'NEEDS_REPLY'] as c
 
 export const ConfidenceSchema = z.enum(['low', 'medium', 'high'])
 
+// Structured-outputs strict mode (both OpenAI and Anthropic via the Vercel AI
+// SDK) requires every property in `properties` to appear in `required`. Optional
+// fields must be expressed as `.nullable()` (null-or-value) rather than
+// `.optional()` (may-be-absent).
 export const SenderIdentitySchema = z.object({
-  personId: z.string().optional(),
-  orgName: z.string().optional(),
+  personId: z.string().nullable(),
+  orgName: z.string().nullable(),
   confidence: ConfidenceSchema,
 })
 
@@ -23,9 +27,9 @@ export const SuggestedActionSchema = z.object({
   id: z.string().min(1),
   type: z.enum(ACTION_TYPE_VALUES),
   title: z.string().min(1),
-  date: z.number().nullable().optional(),
-  time: z.string().nullable().optional(),
-  context: z.string().nullable().optional(),
+  date: z.number().nullable(),
+  time: z.string().nullable(),
+  context: z.string().nullable(),
   sourceQuote: z.string().min(1),
   confidence: ConfidenceSchema,
 })
@@ -34,7 +38,7 @@ export const ClassifiedEmailSchema = z.object({
   id: z.string().min(1),
   classification: z.enum(CLASSIFICATION_VALUES),
   snippet: z.string(),
-  senderIdentity: SenderIdentitySchema.optional(),
+  senderIdentity: SenderIdentitySchema.nullable(),
   suggestedActions: z.array(SuggestedActionSchema),
 })
 

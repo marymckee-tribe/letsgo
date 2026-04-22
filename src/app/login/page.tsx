@@ -11,7 +11,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm flex flex-col gap-16 items-center">
         <div className="flex flex-col items-center text-center gap-4">
            <h1 className="font-heading text-6xl tracking-tighter">THE HUB</h1>
-           <p className="text-foreground/40 text-xs font-medium uppercase tracking-[0.3em]">Chief of Staff Interface</p>
+           <p className="text-muted-foreground text-xs font-medium uppercase tracking-[0.3em]">Chief of Staff Interface</p>
         </div>
 
         <Button
