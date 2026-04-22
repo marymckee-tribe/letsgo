@@ -3,6 +3,7 @@
 import { useHub } from "@/lib/store"
 import { useState } from "react"
 import { Paperclip, Inbox as InboxIcon, User, Activity } from "lucide-react"
+import { LearnDomainBanner } from "@/components/inbox/learn-domain-banner"
 
 export default function InboxPage() {
   const { emails, actOnEmailAction, dismissEmailAction } = useHub()
@@ -79,6 +80,12 @@ export default function InboxPage() {
                         <span>{new Date(activeEmail.date).toLocaleString()}</span>
                      </div>
                    </div>
+
+                   {activeEmail && (
+                     <div className="px-8 lg:px-12 pt-4">
+                       <LearnDomainBanner email={activeEmail} />
+                     </div>
+                   )}
 
                    <div className="p-8 lg:p-12 font-serif text-sm leading-[1.8] text-foreground/80 whitespace-pre-wrap flex-1 bg-white">
                       {activeEmail.fullBody || activeEmail.snippet}
