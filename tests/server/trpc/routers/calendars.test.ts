@@ -1,5 +1,6 @@
 // tests/server/trpc/routers/calendars.test.ts
 import { calendarsRouter } from '@/server/trpc/routers/calendars'
+import { mockCtx } from '../helpers'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { listCalendarMappings, setCalendarMapping } from '@/lib/server/calendar-mappings'
@@ -24,7 +25,7 @@ describe('calendars router', () => {
   })
 
   it('list returns Google calendar metadata per account', async () => {
-    const caller = calendarsRouter.createCaller({ uid: 'mary-uid' })
+    const caller = calendarsRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { calendars } = await caller.list()
     expect(calendars).toHaveLength(1)
     expect(calendars[0]).toMatchObject({
@@ -38,7 +39,7 @@ describe('calendars router', () => {
   })
 
   it('updateMapping persists a calendar→profile mapping', async () => {
-    const caller = calendarsRouter.createCaller({ uid: 'mary-uid' })
+    const caller = calendarsRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const result = await caller.updateMapping({
       calendarId: 'cal1',
       accountId: 'a1',
@@ -55,7 +56,7 @@ describe('calendars router', () => {
   })
 
   it('updateMapping accepts profileId: null to clear the mapping', async () => {
-    const caller = calendarsRouter.createCaller({ uid: 'mary-uid' })
+    const caller = calendarsRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const result = await caller.updateMapping({
       calendarId: 'cal1',
       accountId: 'a1',

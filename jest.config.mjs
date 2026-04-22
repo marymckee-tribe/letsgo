@@ -5,6 +5,7 @@ const config = {
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^server-only$': '<rootDir>/tests/__mocks__/server-only.ts',
   },
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   testMatch: ['<rootDir>/tests/**/*.test.ts', '<rootDir>/tests/**/*.test.tsx'],

@@ -1,4 +1,5 @@
 import { gmailRouter } from '@/server/trpc/routers/gmail'
+import { mockCtx } from '../helpers'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
 import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
@@ -19,14 +20,14 @@ describe('gmail router', () => {
   })
 
   it('list returns unread emails tagged with accountId', async () => {
-    const caller = gmailRouter.createCaller({ uid: 'mary-uid' })
+    const caller = gmailRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
     const { emails } = await caller.list()
     expect(emails).toHaveLength(1)
     expect(emails[0].accountId).toBe('a1')
   })
 
   it('list rejects unauthenticated callers', async () => {
-    const caller = gmailRouter.createCaller({})
+    const caller = gmailRouter.createCaller(mockCtx())
     await expect(caller.list()).rejects.toThrow()
   })
 })

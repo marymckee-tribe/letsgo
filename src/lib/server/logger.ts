@@ -1,3 +1,4 @@
+import 'server-only'
 import pino, { type Logger, type DestinationStream } from 'pino'
 
 const LEVEL = process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'production' ? 'info' : 'debug')
