@@ -2116,7 +2116,7 @@ If any of the above fail, fix and retest before declaring Phase 1 complete.
 ## What's Next (Phase 2+)
 
 After Phase 1 ships:
-- **Phase 2:** New AI extraction (6 classifications, 3 action types), sender identity matching, Life Graph learning loop. New file: `docs/superpowers/plans/YYYY-MM-DD-inbox-phase-2-ai-extraction.md`.
+- **Phase 2:** Shipped. AI extraction (6 classifications, 3 action types), sender identity matching with email-addresses + date-fns-tz ISO-local prompts, Life Graph learning loop via profilesRouter. Plan: docs/superpowers/plans/2026-04-21-inbox-phase-2-ai-extraction.md.
 - **Phase 3:** UI redesign — /inbox three-pane, editable action cards, Clear + Recently cleared.
 - **Phase 4:** Google write flow — real Calendar/Tasks commits with idempotency.
 - **Phase 5:** PDF extraction with Life Graph pre-fill.
