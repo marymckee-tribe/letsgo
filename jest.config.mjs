@@ -32,6 +32,7 @@ const config = {
       },
       setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
       testMatch: [
+        '<rootDir>/tests/components/**/*.test.ts',
         '<rootDir>/tests/components/**/*.test.tsx',
         '<rootDir>/tests/lib/store-clear-email.test.tsx',
       ],
