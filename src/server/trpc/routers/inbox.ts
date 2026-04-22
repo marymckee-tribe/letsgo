@@ -81,7 +81,13 @@ export const inboxRouter = router({
         id: ai.id,
         classification: ai.classification,
         snippet: ai.snippet,
-        senderIdentity: ai.senderIdentity,
+        senderIdentity: ai.senderIdentity
+          ? {
+              confidence: ai.senderIdentity.confidence,
+              personId: ai.senderIdentity.personId ?? undefined,
+              orgName: ai.senderIdentity.orgName ?? undefined,
+            }
+          : undefined,
         suggestedActions: ai.suggestedActions.map(a => ({
           id: a.id,
           type: a.type,
