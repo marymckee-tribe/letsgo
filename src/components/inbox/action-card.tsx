@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { HelpCircle } from "lucide-react"
 import { toast } from "sonner"
 import type { EmailAction } from "@/lib/store"
@@ -14,38 +13,46 @@ interface Props {
 
 function primaryLabel(type: EmailAction["type"]): string {
   switch (type) {
-    case "CALENDAR_EVENT": return "Add to Google Calendar"
-    case "TODO":           return "Add to Google Tasks"
-    case "NEEDS_REPLY":    return "Send reply"
+    case "CALENDAR_EVENT": return "Add to calendar"
+    case "TODO":           return "Create a todo"
+    case "NEEDS_REPLY":    return "Write a reply"
   }
 }
 
-function dateInputValue(epoch?: number): string {
-  if (!epoch) return ""
-  const d = new Date(epoch)
-  const mm = String(d.getMonth() + 1).padStart(2, "0")
-  const dd = String(d.getDate()).padStart(2, "0")
-  return `${d.getFullYear()}-${mm}-${dd}`
+function formatDateMeta(epoch: number): string {
+  return new Date(epoch).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  })
+}
+
+function metaLine(action: EmailAction): string | null {
+  const parts: string[] = []
+  if (action.type === "CALENDAR_EVENT") {
+    if (action.date) parts.push(formatDateMeta(action.date))
+    const t = action.time ?? (action.date ? formatClock(action.date) : undefined)
+    if (t) parts.push(t)
+    if (action.context) parts.push(action.context)
+  } else if (action.type === "TODO") {
+    if (action.date) parts.push(`Due ${formatDateMeta(action.date)}`)
+    if (action.context) parts.push(action.context)
+  }
+  return parts.length ? parts.join(" · ") : null
 }
 
 export function ActionCard({ action, onSkip, onNoop }: Props) {
-  const [title, setTitle] = useState(action.title)
-  const [date, setDate] = useState(dateInputValue(action.date))
-  const [time, setTime] = useState(action.time ?? (action.date ? formatClock(action.date) : ""))
-  const [location, setLocation] = useState("")
-  const [context, setContext] = useState(action.context ?? "PERSONAL")
-  const [body, setBody] = useState("")
-
   const handlePrimary = () => {
     toast("Phase 3 stub", { description: "Real Google writes land in Phase 4." })
     onNoop?.()
   }
 
   const isLow = action.confidence === "low"
+  const meta = metaLine(action)
 
   return (
     <div className="flex flex-col border border-foreground/20 bg-white p-5 shadow-[4px_4px_0_rgba(0,0,0,0.04)]">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between">
         <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
           {action.type.replace(/_/g, " ")}
         </span>
@@ -61,60 +68,15 @@ export function ActionCard({ action, onSkip, onNoop }: Props) {
         )}
       </div>
 
-      {action.type !== "NEEDS_REPLY" && (
-        <label className="mb-3 block text-[10px] uppercase tracking-wider text-muted-foreground">
-          Title
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="mt-1 w-full border border-border bg-white px-2 py-1 text-sm text-foreground"
-          />
-        </label>
+      <h4 className="mb-2 text-base font-medium leading-snug text-foreground">
+        {action.title}
+      </h4>
+
+      {meta && (
+        <p className="mb-4 text-xs text-muted-foreground">{meta}</p>
       )}
 
-      {action.type === "CALENDAR_EVENT" && (
-        <>
-          <label className="mb-3 block text-[10px] uppercase tracking-wider text-muted-foreground">
-            Date
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full border border-border bg-white px-2 py-1 text-sm" />
-          </label>
-          <label className="mb-3 block text-[10px] uppercase tracking-wider text-muted-foreground">
-            Time
-            <input type="text" placeholder="3:00 PM" value={time} onChange={(e) => setTime(e.target.value)} className="mt-1 w-full border border-border bg-white px-2 py-1 text-sm font-mono" />
-          </label>
-          <label className="mb-3 block text-[10px] uppercase tracking-wider text-muted-foreground">
-            Location
-            <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} className="mt-1 w-full border border-border bg-white px-2 py-1 text-sm" />
-          </label>
-          <label className="mb-4 block text-[10px] uppercase tracking-wider text-muted-foreground">
-            Context
-            <input type="text" value={context} onChange={(e) => setContext(e.target.value)} className="mt-1 w-full border border-border bg-white px-2 py-1 text-sm" />
-          </label>
-        </>
-      )}
-
-      {action.type === "TODO" && (
-        <>
-          <label className="mb-3 block text-[10px] uppercase tracking-wider text-muted-foreground">
-            Due date
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full border border-border bg-white px-2 py-1 text-sm" />
-          </label>
-          <label className="mb-4 block text-[10px] uppercase tracking-wider text-muted-foreground">
-            Context
-            <input type="text" value={context} onChange={(e) => setContext(e.target.value)} className="mt-1 w-full border border-border bg-white px-2 py-1 text-sm" />
-          </label>
-        </>
-      )}
-
-      {action.type === "NEEDS_REPLY" && (
-        <label className="mb-4 block text-[10px] uppercase tracking-wider text-muted-foreground">
-          Draft
-          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} className="mt-1 w-full border border-border bg-white px-2 py-1 text-sm font-serif italic leading-relaxed" />
-        </label>
-      )}
-
-      <div className="mt-2 flex flex-col gap-2">
+      <div className="mt-auto flex flex-col gap-2 pt-2">
         <button type="button" onClick={handlePrimary} className="w-full bg-foreground py-3 text-[10px] font-bold uppercase tracking-[0.18em] text-background hover:bg-foreground/80">
           {primaryLabel(action.type)}
         </button>

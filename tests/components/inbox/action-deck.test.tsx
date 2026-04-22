@@ -10,8 +10,8 @@ const actions: EmailAction[] = [
 describe('ActionDeck', () => {
   it('renders one card per action with the right primary labels', () => {
     render(<ActionDeck actions={actions} />)
-    expect(screen.getByRole('button', { name: /add to google calendar/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /add to google tasks/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add to calendar/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /create a todo/i })).toBeInTheDocument()
   })
 
   it('shows an empty state when there are no actions', () => {
@@ -21,8 +21,8 @@ describe('ActionDeck', () => {
 
   it('dismisses a card from local state when Skip is clicked', () => {
     render(<ActionDeck actions={actions} />)
-    expect(screen.getByRole('button', { name: /add to google calendar/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add to calendar/i })).toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: /skip/i })[0])
-    expect(screen.queryByRole('button', { name: /add to google calendar/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /add to calendar/i })).toBeNull()
   })
 })

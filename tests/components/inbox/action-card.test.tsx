@@ -10,6 +10,7 @@ const calAction: EmailAction = {
 
 const todoAction: EmailAction = {
   id: 'a2', type: 'TODO', title: 'Send RSVP',
+  date: new Date('2026-04-25T12:00:00').getTime(), context: 'FAMILY',
   sourceQuote: 'please RSVP by Friday.', confidence: 'high', status: 'PROPOSED',
 }
 
@@ -19,33 +20,38 @@ const replyAction: EmailAction = {
 }
 
 describe('ActionCard', () => {
-  it('CALENDAR_EVENT: renders title, date, time, location, context fields and "Add to Google Calendar" button', () => {
+  it('CALENDAR_EVENT: renders title, meta (date · time · context), and "Add to calendar" button — no form fields', () => {
     render(<ActionCard action={calAction} onSkip={() => {}} />)
-    expect(screen.getByLabelText(/title/i)).toHaveValue('Zoo trip')
-    expect(screen.getByLabelText(/date/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/time/i)).toHaveValue('8:00 AM')
-    expect(screen.getByLabelText(/location/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/context/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /add to google calendar/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Zoo trip', level: 4 })).toBeInTheDocument()
+    expect(screen.getByText(/8:00 AM/)).toBeInTheDocument()
+    expect(screen.getByText(/FAMILY/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add to calendar/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByLabelText(/title/i)).toBeNull()
+    expect(screen.queryByLabelText(/date/i)).toBeNull()
   })
 
-  it('TODO: renders "Add to Google Tasks" button and due-date field', () => {
+  it('TODO: renders "Create a todo" button and "Due <date>" meta — no form fields', () => {
     render(<ActionCard action={todoAction} onSkip={() => {}} />)
-    expect(screen.getByRole('button', { name: /add to google tasks/i })).toBeInTheDocument()
-    expect(screen.getByLabelText(/due date/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Send RSVP', level: 4 })).toBeInTheDocument()
+    expect(screen.getByText(/Due /i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /create a todo/i })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByLabelText(/due date/i)).toBeNull()
   })
 
-  it('NEEDS_REPLY: renders "Send reply" button and textarea', () => {
+  it('NEEDS_REPLY: renders "Write a reply" button and the subject as the title — no textarea', () => {
     render(<ActionCard action={replyAction} onSkip={() => {}} />)
-    expect(screen.getByRole('button', { name: /send reply/i })).toBeInTheDocument()
-    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Re: Zoo trip', level: 4 })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /write a reply/i })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 
   it('clicking the primary button is a no-op in Phase 3 (fires onNoop callback, not a commit)', () => {
     const onNoop = jest.fn()
     render(<ActionCard action={calAction} onSkip={() => {}} onNoop={onNoop} />)
-    fireEvent.click(screen.getByRole('button', { name: /add to google calendar/i }))
+    fireEvent.click(screen.getByRole('button', { name: /add to calendar/i }))
     expect(onNoop).toHaveBeenCalled()
   })
 
