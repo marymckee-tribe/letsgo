@@ -2,6 +2,7 @@
 
 import { useHub } from "@/lib/store"
 import { trpc } from "@/lib/trpc/client"
+import { toast } from "sonner"
 
 export function CalendarsSection() {
   const utils = trpc.useUtils()
@@ -11,7 +12,28 @@ export function CalendarsSection() {
   const calendars = data?.calendars ?? []
 
   const updateMappingMutation = trpc.calendars.updateMapping.useMutation({
-    onSuccess: () => {
+    onMutate: async (input) => {
+      await utils.calendars.list.cancel()
+      const previous = utils.calendars.list.getData()
+      utils.calendars.list.setData(undefined, (old) => {
+        if (!old) return old
+        return {
+          calendars: old.calendars.map((c) =>
+            c.calendarId === input.calendarId && c.accountId === input.accountId
+              ? { ...c, profileId: input.profileId }
+              : c
+          ),
+        }
+      })
+      return { previous }
+    },
+    onError: (_err, _input, context) => {
+      if (context?.previous) {
+        utils.calendars.list.setData(undefined, context.previous)
+      }
+      toast("SYNC ERROR", { description: "Couldn't save calendar mapping — reverting." })
+    },
+    onSettled: () => {
       utils.calendars.list.invalidate()
     },
   })
@@ -20,15 +42,6 @@ export function CalendarsSection() {
     cal: { calendarId: string; accountId: string; calendarName: string },
     profileId: string | null,
   ) => {
-    // Optimistic update: immediately reflect the change in cached data
-    utils.calendars.list.setData(undefined, (old) => {
-      if (!old) return old
-      return {
-        calendars: old.calendars.map(c =>
-          c.calendarId === cal.calendarId ? { ...c, profileId } : c,
-        ),
-      }
-    })
     updateMappingMutation.mutate({
       calendarId: cal.calendarId,
       accountId: cal.accountId,

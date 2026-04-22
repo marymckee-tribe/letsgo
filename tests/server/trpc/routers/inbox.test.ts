@@ -125,4 +125,24 @@ describe('inbox router (Phase 2)', () => {
     const caller = inboxRouter.createCaller(mockCtx())
     await expect(caller.digest()).rejects.toThrow()
   })
+
+  it('swallows per-account failures and continues with surviving accounts', async () => {
+    ;(listAccounts as jest.Mock).mockResolvedValue([
+      { id: 'a1', email: 'mary@tribe.ai' },
+      { id: 'a2', email: 'broken@tribe.ai' },
+    ])
+    // a1 succeeds, a2 throws on refresh-token decrypt
+    ;(getDecryptedRefreshToken as jest.Mock).mockImplementation(async (_uid: string, id: string) => {
+      if (id === 'a2') throw new Error('token decrypt failed')
+      return 'rt'
+    })
+    ;(fetchUnreadPrimary as jest.Mock).mockResolvedValue([baseRaw])
+
+    const caller = inboxRouter.createCaller(mockCtx({ uid: 'mary-uid' }))
+    const { emails } = await caller.digest()
+    expect(emails).toHaveLength(1)
+    expect(emails[0].accountId).toBe('a1')
+    // LLM was still called — the one raw email from a1 went through
+    expect(aiModule.generateObject).toHaveBeenCalledTimes(1)
+  })
 })

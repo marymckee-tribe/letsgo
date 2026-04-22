@@ -4,8 +4,12 @@ const CSP = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https://*.googleusercontent.com https://*.gstatic.com",
   "font-src 'self' https://fonts.gstatic.com data:",
-  "connect-src 'self' https://*.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.sentry.io",
+  "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.sentry.io",
   "frame-src 'self' https://accounts.google.com",
+  "worker-src 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "upgrade-insecure-requests",
   "base-uri 'self'",
   "form-action 'self'",
 ].join('; ')

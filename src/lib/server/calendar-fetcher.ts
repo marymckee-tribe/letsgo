@@ -1,6 +1,17 @@
 // src/lib/server/calendar-fetcher.ts
 
-interface CalendarEvent {
+export interface CalendarEventRaw {
+  id: string
+  iCalUID?: string
+  title: string | undefined
+  start: string | undefined
+  end: string | undefined
+  location: string | undefined
+  calendarId: string
+  calendarName: string | undefined
+}
+
+interface GoogleCalendarEvent {
   id: string
   iCalUID?: string
   summary?: string
@@ -17,7 +28,7 @@ interface CalendarListEntry {
   accessRole?: string
 }
 
-export async function fetchCalendarEvents(accessToken: string): Promise<Record<string, unknown>[]> {
+export async function fetchCalendarEvents(accessToken: string): Promise<CalendarEventRaw[]> {
   const now = new Date()
   const timeMin = now.toISOString()
   const timeMax = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString()
@@ -38,7 +49,7 @@ export async function fetchCalendarEvents(accessToken: string): Promise<Record<s
       const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
       const data = await res.json()
       if (data.error) return []
-      return (data.items || []).map((e: CalendarEvent) => ({
+      return (data.items || []).map((e: GoogleCalendarEvent): CalendarEventRaw => ({
         id: e.id,
         iCalUID: e.iCalUID,
         title: e.summary,
