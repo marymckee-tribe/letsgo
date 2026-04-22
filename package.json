@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:e2e": "playwright test",
     "ci:verify": "eslint src/server src/lib/server src/app/api/trpc tests sentry.client.config.ts sentry.edge.config.ts sentry.server.config.ts instrumentation.ts instrumentation-client.ts && tsc --noEmit && jest --ci"
   },
   "_ci_lint_note": "Lint in ci:verify covers production-readiness files: src/server, src/lib/server, src/app/api/trpc, tests, and config files. Pre-existing errors in src/app, src/components, src/lib (firebase, auth-provider) are excluded. Broaden this path list as those files are cleaned up.",

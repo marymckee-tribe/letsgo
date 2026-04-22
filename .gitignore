@@ -50,3 +50,7 @@ next-env.d.ts
 # editor / local tool caches
 .vscode/
 .playwright-mcp/
+
+# playwright
+playwright-report/
+test-results/
