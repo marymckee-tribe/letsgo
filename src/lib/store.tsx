@@ -41,17 +41,55 @@ export type EntityProfile = {
   routines: string[]
   sizes: Record<string, string>
   medicalNotes: string
+  knownDomains?: string[]
+  knownSenders?: string[]
 }
+
+export type SenderIdentity = {
+  personId?: string
+  orgName?: string
+  confidence: "low" | "medium" | "high"
+}
+
+export type Attachment = {
+  id: string
+  filename: string
+  mimeType: string
+  size: number
+}
+
+export type EmailActionType = "CALENDAR_EVENT" | "TODO" | "NEEDS_REPLY"
+
+export type EmailActionStatus =
+  | "PROPOSED"
+  | "EDITING"
+  | "WRITING"
+  | "COMMITTED"
+  | "DISMISSED"
+  | "FAILED"
 
 export type EmailAction = {
   id: string
-  type: "CALENDAR_INVITE" | "TODO_ITEM" | "OTHER"
+  type: EmailActionType
   title: string
   date?: number
   time?: string
   context?: string
-  status: "PENDING" | "APPROVED" | "DISMISSED"
+  sourceQuote: string
+  confidence: "low" | "medium" | "high"
+  status: EmailActionStatus
+  googleId?: string
 }
+
+export type EmailClassification =
+  | "CALENDAR_EVENT"
+  | "TODO"
+  | "NEEDS_REPLY"
+  | "WAITING_ON"
+  | "FYI"
+  | "NEWSLETTER"
+
+export type EmailHubStatus = "UNREAD" | "READ" | "CLEARED"
 
 export type Email = {
   id: string
@@ -59,11 +97,14 @@ export type Email = {
   accountEmail?: string
   subject: string
   sender: string
+  senderIdentity?: SenderIdentity
+  classification: EmailClassification
   snippet: string
   fullBody: string
-  attachments: { filename: string, mimeType: string }[]
+  attachments: Attachment[]
   suggestedActions: EmailAction[]
   date: number
+  hubStatus: EmailHubStatus
 }
 
 interface HubState {
@@ -198,28 +239,46 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   const emails = useMemo<Email[]>(() => {
     if (!inboxData?.emails) return []
-    return inboxData.emails.map((e) => ({
-      id: e.id,
-      accountId: (e as { accountId?: string }).accountId,
-      accountEmail: (e as { accountEmail?: string }).accountEmail,
-      subject: e.subject,
-      sender: e.sender,
-      snippet: e.snippet,
-      fullBody: (e as { fullBody?: string }).fullBody ?? '',
-      attachments: [],
-      date: (e as { date?: number }).date ?? 0,
-      suggestedActions: emailOverrides.has(e.id)
-        ? emailOverrides.get(e.id)!
-        : e.suggestedActions.map((a) => ({
-            id: a.id,
-            type: a.type as "CALENDAR_INVITE" | "TODO_ITEM" | "OTHER",
-            title: a.title,
-            date: a.date ?? undefined,
-            time: a.time ?? undefined,
-            context: a.context ?? undefined,
-            status: (a as { status?: "PENDING" | "APPROVED" | "DISMISSED" }).status ?? "PENDING",
-          })),
-    }))
+    return inboxData.emails.map((e) => {
+      // Map legacy server action type strings to new EmailActionType names
+      const mapActionType = (raw: string): EmailActionType => {
+        if (raw === 'CALENDAR_INVITE' || raw === 'CALENDAR_EVENT') return 'CALENDAR_EVENT'
+        if (raw === 'TODO_ITEM' || raw === 'TODO') return 'TODO'
+        return 'NEEDS_REPLY'
+      }
+      // Map legacy server status strings to new EmailActionStatus names
+      const mapActionStatus = (raw: string | undefined): EmailActionStatus => {
+        if (raw === 'APPROVED' || raw === 'COMMITTED') return 'COMMITTED'
+        if (raw === 'DISMISSED') return 'DISMISSED'
+        return 'PROPOSED'
+      }
+      return {
+        id: e.id,
+        accountId: (e as { accountId?: string }).accountId,
+        accountEmail: (e as { accountEmail?: string }).accountEmail,
+        subject: e.subject,
+        sender: e.sender,
+        classification: 'FYI' as EmailClassification,
+        snippet: e.snippet,
+        fullBody: (e as { fullBody?: string }).fullBody ?? '',
+        attachments: [],
+        date: (e as { date?: number }).date ?? 0,
+        hubStatus: 'UNREAD' as EmailHubStatus,
+        suggestedActions: emailOverrides.has(e.id)
+          ? emailOverrides.get(e.id)!
+          : e.suggestedActions.map((a) => ({
+              id: a.id,
+              type: mapActionType(a.type),
+              title: a.title,
+              date: a.date ?? undefined,
+              time: a.time ?? undefined,
+              context: a.context ?? undefined,
+              sourceQuote: '',
+              confidence: 'low' as const,
+              status: mapActionStatus((a as { status?: string }).status),
+            })),
+      }
+    })
   }, [inboxData, emailOverrides])
 
   // --- Mutations ---
@@ -309,7 +368,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       const updated = currentActions.map(a => {
         if (a.id === actionId) {
           actionItem = a
-          return { ...a, status: "APPROVED" as const }
+          return { ...a, status: "COMMITTED" as const }
         }
         return a
       })
@@ -321,9 +380,9 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
     if (actionItem) {
       const act = actionItem as EmailAction
-      if (act.type === 'CALENDAR_INVITE') {
+      if (act.type === 'CALENDAR_EVENT') {
         addEvent({ id: Math.random().toString(), title: act.title, time: act.time || "12:00", date: act.date || 1, fromEmail: true })
-      } else if (act.type === 'TODO_ITEM') {
+      } else if (act.type === 'TODO') {
         addTask({ id: Math.random().toString(), title: act.title, context: act.context || "PERSONAL", completed: false })
       }
     }

@@ -49,7 +49,7 @@ export default function InboxPage() {
                       {email.snippet}
                     </p>
 
-                    {email.suggestedActions?.some(a => a.status === 'PENDING') && (
+                    {email.suggestedActions?.some(a => a.status === 'PROPOSED') && (
                       <div className="mt-4 flex gap-2">
                         <span className={`text-[8px] font-bold uppercase py-1 px-2 tracking-widest flex items-center gap-1
                           ${isSelected ? 'bg-background/20 text-background' : 'bg-foreground/10 text-foreground'}
@@ -112,7 +112,7 @@ export default function InboxPage() {
                     ) : (
                       <div className="flex flex-col gap-6">
                         {activeEmail.suggestedActions.map(action => (
-                           <div key={action.id} className={`flex flex-col bg-white border ${action.status === 'PENDING' ? 'border-foreground' : 'border-border opacity-50 grayscale'} p-5 shadow-[4px_4px_0_rgba(0,0,0,0.05)] transition-all`}>
+                           <div key={action.id} className={`flex flex-col bg-white border ${action.status === 'PROPOSED' ? 'border-foreground' : 'border-border opacity-50 grayscale'} p-5 shadow-[4px_4px_0_rgba(0,0,0,0.05)] transition-all`}>
 
                              <div className="mb-6">
                                <span className="text-[10px] font-bold uppercase tracking-widest text-foreground/40 block mb-2">{action.type.replace('_', ' ')}</span>
@@ -122,7 +122,7 @@ export default function InboxPage() {
                                )}
                              </div>
 
-                             {action.status === 'PENDING' ? (
+                             {action.status === 'PROPOSED' ? (
                                <div className="flex flex-col gap-2">
                                  <button onClick={() => actOnEmailAction(activeEmail.id, action.id)} className="w-full bg-foreground text-background text-[10px] font-bold uppercase tracking-widest py-3 hover:bg-foreground/80 transition-colors">Act</button>
                                  <button onClick={() => dismissEmailAction(activeEmail.id, action.id)} className="w-full border border-border text-muted-foreground text-[10px] uppercase font-bold tracking-widest hover:bg-muted transition-colors py-3">Skip</button>
