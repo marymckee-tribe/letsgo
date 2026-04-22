@@ -1,56 +1,35 @@
-## Two-step activation warning
-
-Enabling E2E in CI requires two human actions — in this order:
-
-1. **Set the Firebase secrets** (E2E_USER_EMAIL, E2E_USER_PASSWORD, FIREBASE_WEB_API_KEY) in `.env.local` AND GitHub repo secrets.
-2. **Paste the exact Firebase localStorage key** into `auth-fixture.ts` (replacing the placeholder throw).
-
-If you do #1 without #2, the `e2e` CI job will run but every test will fail loudly on the placeholder throw. That's intended — a loud failure beats a silent unauthenticated pass. Complete both steps before the first CI run that would count.
-
----
-
 # E2E Tests (Playwright)
 
 Smoke tests for authenticated UI flows. Blocked on three human actions before they will run:
 
 ## 1. Create a Firebase E2E test user
 
-Firebase console → Authentication → Users → Add user. Use a strong random password. Record:
+Create a user via Firebase Admin SDK (no Email/Password provider required — the fixture uses custom tokens). Record:
 
-- `E2E_USER_EMAIL` — the email address you set
-- `E2E_USER_PASSWORD` — the password you set
+- `E2E_USER_EMAIL` — any email you set
 - `FIREBASE_WEB_API_KEY` — Firebase Console → Project Settings → General → Web API Key
+- `FIREBASE_ADMIN_SA_JSON` — service-account JSON (already used by the app server)
 
-## 2. Save those three as secrets
+## 2. Save those as secrets
 
 **Local:** Add to `.env.local` (already git-ignored):
 ```
 FIREBASE_WEB_API_KEY=...
 E2E_USER_EMAIL=...
-E2E_USER_PASSWORD=...
+FIREBASE_ADMIN_SA_JSON='...'
 ```
 
 **CI:** GitHub repo → Settings → Secrets and variables → Actions → New repository secret (repeat for each).
 
-## 3. Inspect the Firebase localStorage key
+## 3. Firebase localStorage key (deterministic)
 
-This project uses Firebase JS SDK v12. The SDK stores the auth session in localStorage under a key like:
+This project uses Firebase JS SDK v12. The SDK persists auth under a key built from the API key and app name:
 
 ```
-firebase:authUser:<WEB_API_KEY>:[DEFAULT]
+firebase:authUser:<FIREBASE_WEB_API_KEY>:[DEFAULT]
 ```
 
-The exact key depends on your Web API Key value. To find it:
-
-1. `npm run dev`
-2. Sign in to the app as any real user
-3. DevTools → Application → Storage → Local Storage → `http://localhost:3000`
-4. Copy the full key that starts with `firebase:authUser:`
-5. Open `tests/e2e/auth-fixture.ts`
-6. Replace `PASTE_EXACT_KEY_HERE` with that string
-7. Un-comment the two lines marked `UNCOMMENT` and remove the `throw` above them
-
-The fixture throws intentionally until this step is done — better than a silently unauthenticated test run.
+The fixture constructs this key at runtime from `process.env.FIREBASE_WEB_API_KEY`, so no DevTools inspection is required. See `_persistenceKeyName` in `node_modules/@firebase/auth/dist/esm/index-*.js` if the SDK is ever upgraded and you need to confirm the format still holds.
 
 ## SECURITY: failure-artifact trace sensitivity
 
