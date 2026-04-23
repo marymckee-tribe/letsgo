@@ -1,11 +1,21 @@
 "use client"
 
 import { useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useHub } from '@/lib/store'
 import { trpc } from '@/lib/trpc/client'
-import { CalendarApp } from '@/components/calendar/calendar-app'
 import { FilterSidebar } from '@/components/calendar/filter-sidebar'
 import { EventDetailDrawer } from '@/components/calendar/event-detail-drawer'
+
+// Schedule-X (preact internals) touches the DOM at mount and doesn't SSR cleanly —
+// defer to the client to avoid hydration mismatches and the `<script>` tag warning.
+const CalendarApp = dynamic(
+  () => import('@/components/calendar/calendar-app').then((m) => m.CalendarApp),
+  {
+    ssr: false,
+    loading: () => <div className="flex-1 rounded-md bg-neutral-50" />,
+  },
+)
 
 export default function CalendarPage() {
   const { events } = useHub()
