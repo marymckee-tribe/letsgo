@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from "
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth-provider"
 import { trpc } from "@/lib/trpc/client"
+import { formatInZone, zonedDate, userTimeZone } from "@/lib/datetime"
 
 export type CalendarEvent = {
   id: string
@@ -16,6 +17,12 @@ export type CalendarEvent = {
   aiTravelBuffer?: string | null
   aiPrepSuggestion?: string | null
   profileId?: string | null
+  // ISO pass-through fields for downstream scheduling utilities
+  start?: string
+  end?: string
+  calendarId?: string
+  calendarName?: string
+  accountId?: string
 }
 
 export type Task = {
@@ -149,7 +156,6 @@ const initialGroceries: GroceryItem[] = [
 
 export function HubProvider({ children }: { children: React.ReactNode }) {
   const [additionalEvents, setAdditionalEvents] = useState<CalendarEvent[]>([])
-  const [scheduleInsights] = useState<string[]>([])
   const [additionalTasks, setAdditionalTasks] = useState<Task[]>([])
   const [groceries, setGroceries] = useState<GroceryItem[]>(initialGroceries)
   const [emailOverrides, setEmailOverrides] = useState<Map<string, EmailAction[]>>(new Map())
@@ -160,6 +166,25 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   const { data: calendarData, error: calendarError } = trpc.calendar.list.useQuery(undefined, {
     enabled: !loading && !!user,
   })
+
+  // Today's ISO date in the viewer's time zone (memoised once per mount).
+  const todayISO = useMemo(
+    () => formatInZone(new Date().toISOString(), userTimeZone(), 'yyyy-MM-dd'),
+    [],
+  )
+
+  const { data: enrichmentData } = trpc.calendar.getEventEnrichment.useQuery(
+    { dayISO: todayISO },
+    {
+      enabled: !loading && !!user,
+      staleTime: 5 * 60 * 1000,
+    },
+  )
+
+  const scheduleInsights = useMemo<string[]>(
+    () => enrichmentData?.dailyInsights ?? [],
+    [enrichmentData],
+  )
 
   const { data: tasksData, error: tasksError } = trpc.tasks.list.useQuery(undefined, {
     enabled: !loading && !!user,
@@ -203,21 +228,30 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   const serverEvents = useMemo<CalendarEvent[]>(() => {
     if (!calendarData?.events) return []
+    const zone = userTimeZone()
     return calendarData.events.map((e) => {
-      const start = e.start ?? ''
-      const isAllDay = !start.includes('T')
-      const startDate = new Date(start)
+      const startISO = e.start ?? ''
+      const isAllDay = !startISO.includes('T')
       const time = isAllDay
         ? 'All day'
-        : startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })
+        : formatInZone(startISO, zone, 'h:mm a')
+      const date = isAllDay
+        ? new Date(startISO).getUTCDate()
+        : zonedDate(startISO, zone).getDate()
       return {
         id: e.id,
         title: e.title ?? '',
         time,
-        date: startDate.getDate(),
+        date,
         location: e.location,
         fromEmail: false,
         profileId: e.profileId ?? null,
+        // ISO pass-through
+        start: e.start,
+        end: e.end,
+        calendarId: e.calendarId,
+        calendarName: e.calendarName,
+        accountId: e.accountId,
       }
     })
   }, [calendarData])
