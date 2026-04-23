@@ -1,4 +1,5 @@
 import { formatInTimeZone, toZonedTime } from 'date-fns-tz'
+import { Temporal } from 'temporal-polyfill'
 
 /**
  * Returns the browser's IANA time-zone string (falls back to UTC on the server).
@@ -13,14 +14,18 @@ export function userTimeZone(): string {
 }
 
 /**
- * Schedule-X v4 expects timed events as "YYYY-MM-DD HH:mm" **local** to the viewer.
- * All-day events are passed through unchanged ("YYYY-MM-DD").
- * See https://schedule-x.dev/docs/calendar/events
+ * Schedule-X v4.5+ requires event start/end to be `Temporal.ZonedDateTime` (timed)
+ * or `Temporal.PlainDate` (all-day) instances — strings are rejected at runtime.
+ * Returns null for empty/undefined input so callers can filter the event out.
  */
-export function toScheduleXDateTime(iso: string | undefined, zone: string): string {
-  if (!iso) return ''
-  if (!iso.includes('T')) return iso // date-only → all-day
-  return formatInTimeZone(new Date(iso), zone, 'yyyy-MM-dd HH:mm')
+export function toScheduleXDateTime(
+  iso: string | undefined,
+  zone: string,
+): Temporal.ZonedDateTime | Temporal.PlainDate | null {
+  if (!iso) return null
+  if (!iso.includes('T')) return Temporal.PlainDate.from(iso)
+  const wallClock = formatInTimeZone(new Date(iso), zone, "yyyy-MM-dd'T'HH:mm:ss")
+  return Temporal.ZonedDateTime.from(`${wallClock}[${zone}]`)
 }
 
 /**

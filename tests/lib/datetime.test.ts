@@ -1,21 +1,30 @@
+import { Temporal } from 'temporal-polyfill'
 import { toScheduleXDateTime, formatInZone, userTimeZone } from '@/lib/datetime'
 
 describe('datetime', () => {
   describe('toScheduleXDateTime', () => {
-    it('formats an ISO timestamp into Schedule-X v4 "YYYY-MM-DD HH:mm" in the target zone', () => {
+    it('returns a Temporal.ZonedDateTime for timed events in the target zone', () => {
       const iso = '2026-04-23T15:00:00.000Z' // 15:00 UTC
-      expect(toScheduleXDateTime(iso, 'America/Los_Angeles')).toBe('2026-04-23 08:00')
-      expect(toScheduleXDateTime(iso, 'America/New_York')).toBe('2026-04-23 11:00')
-      expect(toScheduleXDateTime(iso, 'UTC')).toBe('2026-04-23 15:00')
+      const la = toScheduleXDateTime(iso, 'America/Los_Angeles')
+      expect(la).toBeInstanceOf(Temporal.ZonedDateTime)
+      expect((la as Temporal.ZonedDateTime).toString()).toMatch(/^2026-04-23T08:00:00(-07:00|-08:00)\[America\/Los_Angeles\]/)
+
+      const ny = toScheduleXDateTime(iso, 'America/New_York')
+      expect((ny as Temporal.ZonedDateTime).toString()).toMatch(/^2026-04-23T11:00:00(-04:00|-05:00)\[America\/New_York\]/)
+
+      const utc = toScheduleXDateTime(iso, 'UTC')
+      expect((utc as Temporal.ZonedDateTime).toString()).toMatch(/^2026-04-23T15:00:00(\+00:00|Z)\[UTC\]/)
     })
 
-    it('returns a date-only string unchanged (all-day events)', () => {
-      expect(toScheduleXDateTime('2026-04-23', 'America/Los_Angeles')).toBe('2026-04-23')
+    it('returns a Temporal.PlainDate for date-only strings (all-day events)', () => {
+      const result = toScheduleXDateTime('2026-04-23', 'America/Los_Angeles')
+      expect(result).toBeInstanceOf(Temporal.PlainDate)
+      expect((result as Temporal.PlainDate).toString()).toBe('2026-04-23')
     })
 
-    it('returns empty string for undefined/empty input', () => {
-      expect(toScheduleXDateTime(undefined, 'UTC')).toBe('')
-      expect(toScheduleXDateTime('', 'UTC')).toBe('')
+    it('returns null for undefined/empty input', () => {
+      expect(toScheduleXDateTime(undefined, 'UTC')).toBeNull()
+      expect(toScheduleXDateTime('', 'UTC')).toBeNull()
     })
   })
 

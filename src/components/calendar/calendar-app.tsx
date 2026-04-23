@@ -5,18 +5,17 @@ import { ScheduleXCalendar, useCalendarApp } from '@schedule-x/react'
 import { createViewDay, createViewWeek, createViewMonthGrid } from '@schedule-x/calendar'
 import { createEventsServicePlugin } from '@schedule-x/events-service'
 import '@schedule-x/theme-default/dist/index.css'
+import type { Temporal } from 'temporal-polyfill'
 import type { CalendarEvent } from '@/lib/store'
 import { toScheduleXDateTime, userTimeZone } from '@/lib/datetime'
 
-// Schedule-X v4 CalendarEventExternal types `start`/`end` as Temporal objects,
-// but the runtime also accepts the 'YYYY-MM-DD HH:mm' string format used by
-// toScheduleXDateTime. We use a local interface to satisfy TypeScript while
-// keeping the string-based datetime helpers.
+// Schedule-X v4.5 requires start/end as Temporal.ZonedDateTime (timed)
+// or Temporal.PlainDate (all-day) — strings are rejected at runtime.
 interface SxEvent {
   id: string | number
   title: string
-  start: string
-  end: string
+  start: Temporal.ZonedDateTime | Temporal.PlainDate
+  end: Temporal.ZonedDateTime | Temporal.PlainDate
   calendarId: string
 }
 
@@ -28,22 +27,25 @@ export interface CalendarAppProps {
 export function CalendarApp({ events, onEventClick }: CalendarAppProps) {
   const zone = userTimeZone()
 
-  const sxEvents = useMemo((): SxEvent[] =>
-    events
-      .filter(e => e.start)
-      .map(e => ({
+  const sxEvents = useMemo<SxEvent[]>(() => {
+    const out: SxEvent[] = []
+    for (const e of events) {
+      const start = toScheduleXDateTime(e.start, zone)
+      if (!start) continue
+      const end = toScheduleXDateTime(e.end ?? e.start, zone) ?? start
+      out.push({
         id: e.id,
         title: e.title,
-        start: toScheduleXDateTime(e.start, zone),
-        end: toScheduleXDateTime(e.end ?? e.start, zone),
+        start,
+        end,
         calendarId: e.calendarId ?? 'default',
-      })),
-  [events, zone])
+      })
+    }
+    return out
+  }, [events, zone])
 
   const eventsService = useMemo(() => createEventsServicePlugin(), [])
 
-  // v4 API: useCalendarApp(config, plugins?) — plugins as second arg.
-  // callbacks.onEventClick receives (event: CalendarEventExternal, e: UIEvent).
   const calendarApp = useCalendarApp(
     {
       views: [createViewDay(), createViewWeek(), createViewMonthGrid()],
