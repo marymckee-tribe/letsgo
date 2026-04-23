@@ -26,6 +26,7 @@ export interface CalendarListItem {
   selected: boolean
   profileId: string | null
   visible: boolean
+  color: string | null
 }
 
 const MappingInput = z.object({
@@ -39,8 +40,8 @@ export const calendarsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const accounts = await listAccounts(ctx.uid)
     const mappings = await listCalendarMappings(ctx.uid)
-    const mappingMap = new Map<string, { profileId: string | null; visible: boolean }>(
-      mappings.map(m => [m.calendarId, { profileId: m.profileId, visible: m.visible ?? true }]),
+    const mappingMap = new Map<string, { profileId: string | null; visible: boolean; color: string | null }>(
+      mappings.map(m => [m.calendarId, { profileId: m.profileId, visible: m.visible ?? true, color: m.color ?? null }]),
     )
 
     const perAccount = await Promise.all(
@@ -70,6 +71,7 @@ export const calendarsRouter = router({
                   calendarName: c.summary ?? c.id,
                   profileId: null,
                   visible: true,
+                  // color intentionally omitted — let the UI offer the default
                 }),
               ),
           )
@@ -84,6 +86,7 @@ export const calendarsRouter = router({
               selected: c.selected !== false,
               profileId: mapping?.profileId ?? null,
               visible: mapping?.visible ?? true,
+              color: mapping?.color ?? null,
             }
           })
         } catch (err: unknown) {
@@ -124,6 +127,31 @@ export const calendarsRouter = router({
         calendarName: existing.calendarName,
         profileId: existing.profileId,
         visible: input.visible,
+      })
+      return { ok: true }
+    }),
+
+  setColor: protectedProcedure
+    .input(z.object({
+      calendarId: z.string().min(1),
+      colorId: z.string().nullable(),  // null = reset to default
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const mappings = await listCalendarMappings(ctx.uid)
+      const existing = mappings.find(m => m.calendarId === input.calendarId)
+      if (!existing) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `No mapping found for calendar ${input.calendarId}. Call calendars.list first to seed a mapping row.`,
+        })
+      }
+      await setCalendarMapping(ctx.uid, {
+        calendarId: existing.calendarId,
+        accountId: existing.accountId,
+        calendarName: existing.calendarName,
+        profileId: existing.profileId,
+        visible: existing.visible,
+        color: input.colorId ?? undefined,
       })
       return { ok: true }
     }),

@@ -8,6 +8,7 @@ export interface CalendarMapping {
   profileId: string | null
   updatedAt: number
   visible?: boolean
+  color?: string | null
 }
 
 function col(uid: string) {
@@ -21,6 +22,7 @@ export async function listCalendarMappings(uid: string): Promise<CalendarMapping
     return {
       ...data,
       visible: data.visible ?? true,
+      color: data.color ?? null,
     }
   })
 }
@@ -33,7 +35,7 @@ export async function getCalendarMapping(uid: string, calendarId: string): Promi
 
 export async function setCalendarMapping(
   uid: string,
-  input: { calendarId: string; accountId: string; calendarName: string; profileId: string | null; visible?: boolean },
+  input: { calendarId: string; accountId: string; calendarName: string; profileId: string | null; visible?: boolean; color?: string },
 ): Promise<void> {
   const record: CalendarMapping = {
     calendarId: input.calendarId,
@@ -42,6 +44,7 @@ export async function setCalendarMapping(
     profileId: input.profileId,
     updatedAt: Date.now(),
     visible: input.visible ?? true,
+    color: input.color ?? null,
   }
   await col(uid).doc(input.calendarId).set(record)
 }
