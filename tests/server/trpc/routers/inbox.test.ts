@@ -5,6 +5,7 @@ import { refreshAccessToken } from '@/lib/server/google-oauth'
 import { fetchUnreadPrimary } from '@/lib/server/gmail-fetcher'
 import { seedProfilesIfEmpty } from '@/lib/server/profiles'
 import * as aiModule from 'ai'
+import * as emailsStore from '@/lib/server/emails-store'
 
 jest.mock('@/lib/server/accounts')
 jest.mock('@/lib/server/google-oauth')
@@ -16,6 +17,11 @@ jest.mock('@ai-sdk/openai', () => ({ openai: jest.fn() }))
 jest.mock('@/lib/server/inbox-status', () => ({
   getHubStatusMap: jest.fn().mockResolvedValue({}),
   setHubStatus: jest.fn(),
+}))
+// Phase 4: mock emails-store — getEmailState returns null (first-read path) so upsertEmailState seeds
+jest.mock('@/lib/server/emails-store', () => ({
+  getEmailState: jest.fn().mockResolvedValue(null),
+  upsertEmailState: jest.fn().mockResolvedValue(undefined),
 }))
 
 const baseRaw = {
@@ -63,6 +69,9 @@ describe('inbox router (Phase 2)', () => {
       },
     ])
     ;(aiModule.generateObject as jest.Mock).mockResolvedValue({ object: { emails: [baseClassified] } })
+    // Phase 4: re-apply emails-store stubs after clearAllMocks
+    ;(emailsStore.getEmailState as jest.Mock).mockResolvedValue(null)
+    ;(emailsStore.upsertEmailState as jest.Mock).mockResolvedValue(undefined)
   })
 
   it('returns richer Email records with classification, senderIdentity, hubStatus, sourceQuote', async () => {
@@ -78,6 +87,20 @@ describe('inbox router (Phase 2)', () => {
     expect(e.suggestedActions[0].status).toBe('PROPOSED')
     expect(e.accountId).toBe('a1')
     expect(e.accountEmail).toBe('mary@tribe.ai')
+    // Phase 4: upsertEmailState seeded once per digested email (first-read path)
+    expect(emailsStore.upsertEmailState).toHaveBeenCalledTimes(1)
+    // Phase 4: seed doc must carry the full action payload (type/title/date/time/sourceQuote),
+    // not just id+status — commit procedures read this back from Firestore without re-running digest.
+    const [, seedDoc] = (emailsStore.upsertEmailState as jest.Mock).mock.calls[0]
+    expect(seedDoc.suggestedActions[0]).toEqual(
+      expect.objectContaining({
+        id: expect.any(String),
+        type: 'CALENDAR_EVENT',
+        title: expect.any(String),
+        sourceQuote: 'Zoo trip Thursday 8am.',
+        status: 'PROPOSED',
+      }),
+    )
   })
 
   it('returns empty array when no accounts return emails (does not call the LLM)', async () => {

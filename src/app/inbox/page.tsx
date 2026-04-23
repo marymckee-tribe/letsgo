@@ -60,7 +60,7 @@ function InboxPageInner() {
               email={activeEmail}
               profiles={profiles}
               onClear={(id) => {
-                clearMut.mutate({ id })
+                clearMut.mutate({ emailId: id })
                 setSelectedId(null)
               }}
             />
@@ -73,7 +73,11 @@ function InboxPageInner() {
         </section>
 
         <aside aria-label="Suggested actions" className="w-[300px] shrink-0 border-l border-border bg-white">
-          <ActionDeck actions={activeEmail?.suggestedActions ?? []} />
+          <ActionDeck
+            actions={activeEmail?.suggestedActions ?? []}
+            emailId={activeEmail?.id ?? ""}
+            timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+          />
         </aside>
       </div>
     </main>
