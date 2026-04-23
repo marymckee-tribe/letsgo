@@ -1,12 +1,9 @@
 /* src/styles/schedule-x-theme.css
-   Schedule-X v4 overrides — Google-Calendar-inspired look:
-   clean white surface, subtle gray grid, soft colored event chips with
-   a colored left accent bar, prominent "today" + "now" indicators,
-   system type hierarchy. */
+   Schedule-X v4 overrides — Google-Calendar-inspired, soft + refined.
+   Near-white surfaces, near-transparent grid lines, soft blue accents,
+   restrained type hierarchy. */
 
 :root {
-  /* Primary accent — used for today highlight, selected buttons, focus rings.
-     Soft blue à la Google. */
   --sx-color-primary: #1a73e8;
   --sx-color-on-primary: #ffffff;
   --sx-color-primary-container: #e8f0fe;
@@ -22,42 +19,40 @@
   --sx-color-tertiary-container: #e8f0fe;
   --sx-color-on-tertiary-container: #174ea6;
 
-  /* Surfaces — near-white everywhere; keep visual calm */
   --sx-color-surface: #ffffff;
-  --sx-color-surface-dim: #f8f9fa;
+  --sx-color-surface-dim: #fbfbfc;
   --sx-color-surface-bright: #ffffff;
-  --sx-color-on-surface: #202124;
+  --sx-color-on-surface: #3c4043;
   --sx-color-surface-container: #ffffff;
   --sx-color-surface-container-low: #fafbfc;
-  --sx-color-surface-container-high: #f1f3f4;
+  --sx-color-surface-container-high: #f6f8fa;
   --sx-color-background: #ffffff;
-  --sx-color-on-background: #202124;
+  --sx-color-on-background: #3c4043;
 
-  /* Grid lines — soft gray, barely there */
-  --sx-color-outline: #dadce0;
-  --sx-color-outline-variant: #e8eaed;
+  --sx-color-outline: #e5e7eb;
+  --sx-color-outline-variant: #f1f3f4;
 
-  --sx-color-shadow: rgb(60 64 67 / 0.25);
+  --sx-color-shadow: rgb(60 64 67 / 0.18);
   --sx-color-surface-tint: #1a73e8;
   --sx-color-neutral: var(--sx-color-outline);
   --sx-color-neutral-variant: var(--sx-color-outline-variant);
 
   --sx-internal-color-gray-ripple-background: #e8eaed;
-  --sx-internal-color-light-gray: #f8f9fa;
-  --sx-internal-color-text: #202124;
+  --sx-internal-color-light-gray: #fafbfc;
+  --sx-internal-color-text: #3c4043;
 }
 
-/* ----- Wrapper: strip the boxy border, let it sit inside the app shell ----- */
+/* Wrapper: no border, rounded corners, app background. */
 .sx__calendar-wrapper,
 .sx-react-calendar-wrapper {
   border: none;
   background: #ffffff;
-  color: #202124;
+  color: #3c4043;
   border-radius: 8px;
   overflow: hidden;
 }
 
-/* ----- Type system: inherit Jost/DM Sans, tighter tracking, readable size ----- */
+/* Inherit app fonts; restrained size + tracking */
 .sx__calendar-wrapper *,
 .sx__date-picker-wrapper * {
   font-family: inherit;
@@ -65,73 +60,103 @@
   letter-spacing: 0;
 }
 
-/* Header: month/year title */
-.sx__forward-backward-navigation button,
-.sx__view-selection,
+/* ----- Top bar ----- */
+
+.sx__calendar-header {
+  border-bottom: 1px solid #f1f3f4 !important;
+  padding: 0.75rem 1rem !important;
+}
+
 .sx__range-heading {
+  font-size: 1rem;
   font-weight: 500;
-  letter-spacing: -0.01em;
+  color: #3c4043;
 }
 
-.sx__range-heading {
-  font-size: 1.25rem;
-}
-
-/* Today button + view switcher — pill style */
 .sx__today-button,
-.sx__view-selection-selected-item {
+.sx__view-selection-selected-item,
+.sx__view-selection-item {
   border-radius: 9999px !important;
   font-weight: 500;
+  font-size: 0.8125rem;
   letter-spacing: 0;
+  padding: 0.375rem 0.875rem !important;
+}
+
+.sx__today-button {
+  border: 1px solid #dadce0 !important;
+  background: transparent !important;
+  color: #3c4043 !important;
+}
+.sx__today-button:hover {
+  background: #f8f9fa !important;
+}
+
+/* Arrow buttons: subtle */
+.sx__forward-backward-navigation button {
+  color: #5f6368 !important;
+}
+.sx__forward-backward-navigation button:hover {
+  background: #f1f3f4 !important;
 }
 
 /* ----- Week / day grid ----- */
 
-/* Row dividers — softer than default */
 .sx__time-grid-hour,
 .sx__week-grid__hour,
 .sx__date-grid-cell,
 .sx__month-grid-cell,
 .sx__week-grid__day {
-  border-color: var(--sx-color-outline-variant) !important;
+  border-color: #f1f3f4 !important;
 }
 
-/* Hour labels on the left rail */
-.sx__time-grid__hour-text {
-  color: #70757a;
-  font-size: 0.6875rem;
+/* Hour labels */
+.sx__time-grid__hour-text,
+.sx__week-grid__hour-text {
+  color: #70757a !important;
+  font-size: 0.6875rem !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.02em !important;
+}
+
+/* Day header: "Mon 22" */
+.sx__week-grid__date,
+.sx__date-grid__date,
+.sx__week-header,
+.sx__week-grid__day-name {
   font-weight: 500;
+  color: #5f6368;
+  font-size: 0.75rem;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-}
-
-/* Day headers (Mon 22 / Tue 23 etc.) */
-.sx__week-grid__date,
-.sx__date-grid__date {
-  font-weight: 500;
 }
 
 .sx__week-grid__date-number,
 .sx__date-grid__date-number {
   font-weight: 400;
+  font-size: 1.375rem;
+  color: #3c4043;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  line-height: 1.8rem;
 }
 
-/* TODAY: bold circle on the date number */
+/* TODAY — circled blue date number */
 .sx__week-grid__date--today .sx__week-grid__date-number,
-.sx__date-grid__date--today .sx__date-grid__date-number,
-.sx__month-grid-day--today .sx__month-grid-day__header-day-name {
-  background: #1a73e8;
-  color: #ffffff;
+.sx__date-grid__date--today .sx__date-grid__date-number {
+  background: #1a73e8 !important;
+  color: #ffffff !important;
   border-radius: 9999px;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 1.9rem;
+  height: 1.9rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-weight: 500;
+  font-size: 1.0625rem;
 }
 
-/* Current-time line — Google Calendar red */
+/* Current-time red line */
 .sx__time-indicator,
 .sx__current-time-indicator {
   background: #ea4335 !important;
@@ -148,7 +173,6 @@
 
 /* ----- Event chips ----- */
 
-/* Default: soft blue background, darker-blue left accent, dark text */
 .sx__event,
 .sx__time-grid-event,
 .sx__week-grid-event,
@@ -190,6 +214,7 @@
 }
 
 /* ----- Month view polish ----- */
+
 .sx__month-grid-day {
   background: #ffffff !important;
 }
@@ -209,7 +234,6 @@
   color: #bdc1c6 !important;
 }
 
-/* Weekday headers row (Sun Mon Tue...) */
 .sx__month-grid-weekday,
 .sx__week-grid__weekday {
   color: #5f6368;
@@ -217,9 +241,11 @@
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  padding: 0.5rem 0.25rem !important;
 }
 
-/* ----- Focus / keyboard visibility ----- */
+/* ----- Focus ----- */
+
 .sx__calendar-wrapper button:focus-visible,
 .sx__calendar-wrapper [tabindex]:focus-visible {
   outline: 2px solid #1a73e8 !important;
