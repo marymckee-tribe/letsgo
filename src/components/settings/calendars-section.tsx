@@ -11,6 +11,15 @@ export function CalendarsSection() {
   const { data, isLoading } = trpc.calendars.list.useQuery()
   const calendars = data?.calendars ?? []
 
+  const setVisibility = trpc.calendars.setVisibility.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.calendars.list.invalidate(),
+        utils.calendar.list.invalidate(),
+      ])
+    },
+  })
+
   const updateMappingMutation = trpc.calendars.updateMapping.useMutation({
     onMutate: async (input) => {
       await utils.calendars.list.cancel()
@@ -78,16 +87,28 @@ export function CalendarsSection() {
                     <div className="font-medium text-sm">{cal.calendarName}</div>
                     <div className="text-xs text-muted-foreground font-mono">{cal.calendarId}</div>
                   </div>
-                  <select
-                    value={cal.profileId ?? ""}
-                    onChange={e => handleProfileChange(cal, e.target.value || null)}
-                    className="text-xs font-mono border border-border px-2 py-1 bg-background text-foreground focus:outline-none"
-                  >
-                    <option value="">Unassigned</option>
-                    {profiles.map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={cal.visible}
+                        disabled={setVisibility.isPending}
+                        onChange={(e) => setVisibility.mutate({ calendarId: cal.calendarId, visible: e.target.checked })}
+                        className="accent-foreground w-3.5 h-3.5 disabled:opacity-40"
+                      />
+                      <span className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground">Visible</span>
+                    </label>
+                    <select
+                      value={cal.profileId ?? ""}
+                      onChange={e => handleProfileChange(cal, e.target.value || null)}
+                      className="text-xs font-mono border border-border px-2 py-1 bg-background text-foreground focus:outline-none"
+                    >
+                      <option value="">Unassigned</option>
+                      {profiles.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </li>
               ))}
             </ul>
