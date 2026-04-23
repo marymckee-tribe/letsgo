@@ -1,6 +1,7 @@
 import { openai } from '@ai-sdk/openai'
 import { generateObject } from 'ai'
 import { z } from 'zod'
+import { TRPCError } from '@trpc/server'
 import { router, protectedProcedure } from '../index'
 import { rateLimit } from '@/lib/server/rate-limit'
 import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
@@ -15,9 +16,15 @@ import {
 } from '@/lib/server/digest-prompt'
 import { ClassifiedEmailsSchema } from '@/lib/server/classification-schema'
 import { setHubStatus, getHubStatusMap } from '@/lib/server/inbox-status'
-import { getEmailState, upsertEmailState } from '@/lib/server/emails-store'
+import {
+  getEmailState,
+  upsertEmailState,
+  updateEmailHubStatus,
+  markOrphanActionsDismissedByClear,
+} from '@/lib/server/emails-store'
 import type { StoredEmail, StoredAction, StoredActionStatus } from '@/lib/server/emails-store'
 import type { EmailActionStatus } from '@/lib/store'
+import { markMessageRead } from '@/lib/server/gmail-writer'
 
 /** Map internal StoredActionStatus → wire-safe EmailActionStatus (DISMISSED_BY_CLEAR collapses to DISMISSED). */
 function toWireStatus(s: StoredActionStatus): EmailActionStatus {
@@ -151,10 +158,41 @@ export const inboxRouter = router({
   }),
 
   markCleared: protectedProcedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(z.object({ emailId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      await setHubStatus(ctx.uid, input.id, 'CLEARED')
-      return { ok: true }
+      const email = await getEmailState(ctx.uid, input.emailId)
+      if (!email) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Email ${input.emailId} not found` })
+      }
+
+      // 1. Flip hubStatus
+      await updateEmailHubStatus(ctx.uid, input.emailId, 'CLEARED')
+
+      // 2. Orphan actions
+      await markOrphanActionsDismissedByClear(ctx.uid, input.emailId)
+
+      // 3. Gmail mark-as-read (best-effort; don't unwind if this fails)
+      let gmailMarkReadFailed = false
+      const accounts = await listAccounts(ctx.uid)
+      const accountId = (email.accountId as string | undefined) ?? accounts[0]?.id
+      const account = accounts.find((a) => a.id === accountId)
+      if (account) {
+        try {
+          const rt = await getDecryptedRefreshToken(ctx.uid, account.id)
+          if (rt) {
+            const { accessToken } = await refreshAccessToken(rt)
+            await markMessageRead(accessToken, input.emailId)
+          } else {
+            gmailMarkReadFailed = true
+          }
+        } catch {
+          gmailMarkReadFailed = true
+        }
+      } else {
+        gmailMarkReadFailed = true
+      }
+
+      return { ok: true as const, gmailMarkReadFailed }
     }),
 
   markUnread: protectedProcedure

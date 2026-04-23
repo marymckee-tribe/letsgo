@@ -398,14 +398,14 @@ export function useInboxEmails() {
 export function useClearEmail() {
   const utils = trpc.useUtils()
   return trpc.inbox.markCleared.useMutation({
-    async onMutate({ id }) {
+    async onMutate({ emailId }) {
       await utils.inbox.digest.cancel()
       const previous = utils.inbox.digest.getData()
       utils.inbox.digest.setData(undefined, (old) => {
         if (!old) return old
         return {
           ...old,
-          emails: old.emails.map((e) => (e.id === id ? { ...e, hubStatus: 'CLEARED' as const } : e)),
+          emails: old.emails.map((e) => (e.id === emailId ? { ...e, hubStatus: 'CLEARED' as const } : e)),
         }
       })
       return { previous }

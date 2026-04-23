@@ -88,7 +88,7 @@ describe('useClearEmail', () => {
 
     const { result: mutResult } = renderHook(() => useClearEmail(), { wrapper: Wrapper })
     await act(async () => {
-      mutResult.current.mutate({ id: 'm1' })
+      mutResult.current.mutate({ emailId: 'm1' })
     })
 
     // Optimistic: should briefly be CLEARED.

@@ -64,7 +64,7 @@ describe('InboxPage', () => {
     const reader = screen.getByLabelText(/email reader/i)
     fireEvent.click(within(reader).getByRole('button', { name: /clear/i }))
     const { __clearMutate } = jest.requireMock('@/lib/store') as { __clearMutate: jest.Mock }
-    expect(__clearMutate).toHaveBeenCalledWith({ id: 'm1' })
+    expect(__clearMutate).toHaveBeenCalledWith({ emailId: 'm1' })
   })
 
   it('selects the email from ?thread= query param on mount if present in the list; falls back to first if not present', () => {

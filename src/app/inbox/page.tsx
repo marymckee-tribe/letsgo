@@ -60,7 +60,7 @@ function InboxPageInner() {
               email={activeEmail}
               profiles={profiles}
               onClear={(id) => {
-                clearMut.mutate({ id })
+                clearMut.mutate({ emailId: id })
                 setSelectedId(null)
               }}
             />
