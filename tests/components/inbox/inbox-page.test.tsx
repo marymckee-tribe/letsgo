@@ -1,3 +1,16 @@
+// Mock useCommitAction so ActionCard can render without a trpc/QueryClient provider.
+jest.mock('@/hooks/use-commit-action', () => ({
+  useCommitAction: () => ({
+    lastStatus: 'PROPOSED',
+    errorMessage: null,
+    isPending: false,
+    commitCalendar: jest.fn().mockResolvedValue(undefined),
+    commitTask: jest.fn().mockResolvedValue(undefined),
+    dismiss: jest.fn().mockResolvedValue(undefined),
+    retry: jest.fn().mockResolvedValue(undefined),
+  }),
+}))
+
 import { render, screen, within, fireEvent } from '@testing-library/react'
 import InboxPage from '@/app/inbox/page'
 
