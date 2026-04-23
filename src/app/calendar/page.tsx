@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useHub } from '@/lib/store'
 import { trpc } from '@/lib/trpc/client'
 import { FilterSidebar } from '@/components/calendar/filter-sidebar'
@@ -24,6 +25,16 @@ export default function CalendarPage() {
   const [activeProfiles, setActiveProfiles] = useState<Set<string>>(new Set())
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
 
+  // Sidebar collapse state — initialised from localStorage on mount.
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  useEffect(() => {
+    const stored = localStorage.getItem('calendar:sidebarOpen')
+    if (stored !== null) setSidebarOpen(stored !== 'false')
+  }, [])
+  useEffect(() => {
+    localStorage.setItem('calendar:sidebarOpen', String(sidebarOpen))
+  }, [sidebarOpen])
+
   const hiddenCalendarIds = useMemo(
     () => new Set(
       (calendarsData?.calendars ?? [])
@@ -32,6 +43,15 @@ export default function CalendarPage() {
     ),
     [calendarsData],
   )
+
+  // Build a Map<rawCalendarId, paletteId | null> for CalendarApp to tint events.
+  const calendarColors = useMemo(() => {
+    const m = new Map<string, string | null>()
+    for (const c of calendarsData?.calendars ?? []) {
+      m.set(c.calendarId, c.color ?? null)
+    }
+    return m
+  }, [calendarsData])
 
   // Server already filters by visibility, but we re-filter client-side for zero-flicker
   // when the user toggles a calendar off (the mutation's invalidation has a round-trip).
@@ -54,14 +74,26 @@ export default function CalendarPage() {
 
   return (
     <main className="flex-1 w-full bg-white text-foreground flex p-8 lg:p-12 h-[calc(100vh-6rem)]">
-      <FilterSidebar
-        activeProfiles={activeProfiles}
-        onToggleProfile={toggleProfile}
-      />
+      {/* Sidebar toggle button */}
+      <button
+        onClick={() => setSidebarOpen(o => !o)}
+        aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        className="shrink-0 self-start mr-2 mt-0.5 p-1 text-foreground/40 hover:text-foreground transition-colors"
+      >
+        {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+      </button>
+
+      {sidebarOpen && (
+        <FilterSidebar
+          activeProfiles={activeProfiles}
+          onToggleProfile={toggleProfile}
+        />
+      )}
       <div className="flex-1 min-w-0 ml-8">
         <CalendarApp
           events={visibleEvents}
           onEventClick={setSelectedEventId}
+          calendarColors={calendarColors}
         />
       </div>
       <EventDetailDrawer

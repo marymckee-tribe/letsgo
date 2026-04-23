@@ -13,6 +13,7 @@ import '@schedule-x/theme-default/dist/index.css'
 import type { Temporal } from 'temporal-polyfill'
 import type { CalendarEvent } from '@/lib/store'
 import { toScheduleXDateTime, userTimeZone } from '@/lib/datetime'
+import { getCalendarColor, DEFAULT_CALENDAR_COLOR_ID } from '@/lib/calendar-colors'
 
 // Schedule-X v4.5 requires start/end as Temporal.ZonedDateTime (timed)
 // or Temporal.PlainDate (all-day) — strings are rejected at runtime.
@@ -27,6 +28,8 @@ interface SxEvent {
 export interface CalendarAppProps {
   events: CalendarEvent[]
   onEventClick?: (eventId: string) => void
+  /** Maps raw calendarId → palette id (or null). Used to tint events per-calendar. */
+  calendarColors?: Map<string, string | null>
 }
 
 // Schedule-X v4 validates event ids against /^[a-zA-Z0-9_-]*$/ (see validateEvents
@@ -36,7 +39,7 @@ function sanitizeId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_-]/g, '_')
 }
 
-export function CalendarApp({ events, onEventClick }: CalendarAppProps) {
+export function CalendarApp({ events, onEventClick, calendarColors }: CalendarAppProps) {
   const zone = userTimeZone()
 
   // Map sanitized Schedule-X ids back to the original CalendarEvent.id so
@@ -64,12 +67,36 @@ export function CalendarApp({ events, onEventClick }: CalendarAppProps) {
     return out
   }, [events, zone])
 
+  // Build the Schedule-X `calendars` config from the unique calendarIds in sxEvents.
+  // Keys must use the sanitized id (Schedule-X rejects '@' etc in calendarId keys).
+  const calendarsConfig = useMemo(() => {
+    const record: Record<string, { colorName: string; lightColors: { main: string; container: string; onContainer: string } }> = {}
+    for (const sxEvent of sxEvents) {
+      const sanitized = sxEvent.calendarId // already sanitized in sxEvents construction
+      if (sanitized in record) continue
+      // Reverse-lookup the raw id to find the user's chosen palette id.
+      // sxEvents stores the sanitized calendarId; we need the raw one to look up in calendarColors.
+      // We walk the original events to find the matching raw calendarId.
+      const rawCalendarId = events.find(
+        (e) => e.calendarId && sanitizeId(e.calendarId) === sanitized,
+      )?.calendarId ?? sanitized
+      const paletteId = calendarColors?.get(rawCalendarId) ?? DEFAULT_CALENDAR_COLOR_ID
+      const { main, container, onContainer } = getCalendarColor(paletteId)
+      record[sanitized] = {
+        colorName: sanitized,
+        lightColors: { main, container, onContainer },
+      }
+    }
+    return record
+  }, [sxEvents, events, calendarColors])
+
   const eventsService = useMemo(() => createEventsServicePlugin(), [])
 
   const calendarApp = useCalendarApp(
     {
       views: [createViewDay(), createViewWeek(), createViewMonthGrid()],
       events: sxEvents as unknown as Parameters<typeof useCalendarApp>[0]['events'],
+      calendars: calendarsConfig,
       defaultView: 'week',
       // Hide the 12am–6am dead zone. Events before 6am or after midnight
       // are clipped by Schedule-X — adjust if users need those hours.
