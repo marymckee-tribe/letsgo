@@ -33,7 +33,6 @@ export function DashboardCards({ className }: { className?: string }) {
                  <div className="flex justify-between items-start group cursor-pointer border-b border-transparent hover:border-border pb-1 transition-colors">
                    <div className="flex flex-col">
                      <span className="text-foreground text-sm group-hover:underline decoration-1 underline-offset-4">{event.title}</span>
-                     {event.aiTravelBuffer && <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground mt-1">[{event.aiTravelBuffer}]</span>}
                    </div>
                    <span className="text-muted-foreground text-xs tabular-nums mt-0.5">{event.time}</span>
                  </div>
@@ -47,12 +46,14 @@ export function DashboardCards({ className }: { className?: string }) {
                   </SheetDescription>
                 </SheetHeader>
                 <div className="space-y-8">
-                  <div>
-                    <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-4">Event Context</h3>
-                    <div className="space-y-4 text-foreground text-sm">
-                       <p className="flex items-center gap-4"><span className="w-1.5 h-1.5 bg-foreground shrink-0" /><span>Travel Estimate: {event.aiTravelBuffer || "None"}</span></p>
+                  {event.description && (
+                    <div>
+                      <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-4">Description</h3>
+                      <p className="whitespace-pre-wrap text-foreground/80 text-sm font-serif leading-relaxed">
+                        {event.description}
+                      </p>
                     </div>
-                  </div>
+                  )}
                   <div>
                     <h3 className="text-xs uppercase tracking-widest font-semibold text-muted-foreground mb-4">AI Prep Notes</h3>
                     <p className="border-l-2 border-signal-ai/30 pl-4 py-1 text-foreground/80 font-serif italic text-sm">

@@ -12,9 +12,9 @@ export type CalendarEvent = {
   time: string
   date: number
   location?: string
+  description?: string     // Google Calendar event description (may be empty)
   notes?: string           // undefined = not yet generated; string = cached (may be empty)
   fromEmail?: boolean
-  aiTravelBuffer?: string | null
   aiPrepSuggestion?: string | null
   profileId?: string | null
   // ISO pass-through fields for downstream scheduling utilities
@@ -244,6 +244,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         time,
         date,
         location: e.location,
+        description: e.description,
         fromEmail: false,
         profileId: e.profileId ?? null,
         // ISO pass-through

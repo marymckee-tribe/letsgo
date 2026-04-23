@@ -43,14 +43,12 @@ describe('calendar.getEventEnrichment', () => {
     it('returns perEvent populated and dailyInsights empty', async () => {
       ;(aiModule.generateObject as jest.Mock).mockResolvedValue({
         object: {
-          travelBuffer: 'Leave by 7:45 AM; 30 min drive with traffic.',
           prepSuggestion: 'Bring insurance card and recent X-rays.',
         },
       })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const caller = calendarRouter.createCaller({ uid: 'mary-uid' } as any)
       const result = await caller.getEventEnrichment({ eventId: 'e1' })
-      expect(result.perEvent?.travelBuffer).toContain('7:45')
       expect(result.perEvent?.prepSuggestion).toContain('insurance')
       expect(result.dailyInsights).toEqual([])
     })
@@ -62,16 +60,17 @@ describe('calendar.getEventEnrichment', () => {
         .rejects.toThrow(/NOT_FOUND|not found/i)
     })
 
-    it('passes nearby events (same day, other events) into the prompt context', async () => {
+    it("passes the target event's fields into the prompt context", async () => {
       const generateObject = aiModule.generateObject as jest.Mock
       generateObject.mockResolvedValue({
-        object: { travelBuffer: null, prepSuggestion: null },
+        object: { prepSuggestion: null },
       })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const caller = calendarRouter.createCaller({ uid: 'mary-uid' } as any)
       await caller.getEventEnrichment({ eventId: 'e1' })
       const promptArg = generateObject.mock.calls[0][0].prompt as string
-      expect(promptArg).toContain('Lunch')
+      expect(promptArg).toContain('Dentist')
+      expect(promptArg).toContain('123 Main St')
     })
   })
 

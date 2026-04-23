@@ -9,11 +9,26 @@ export interface EventDetailDrawerProps {
   onClose: () => void
 }
 
+/** Strip HTML tags from Google Calendar descriptions (they sometimes ship as HTML). */
+function plainText(raw: string): string {
+  return raw
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim()
+}
+
 export function EventDetailDrawer({ eventId, onClose }: EventDetailDrawerProps) {
   const { events } = useHub()
   const zone = userTimeZone()
 
-  const event = eventId ? events.find(e => e.id === eventId) ?? null : null
+  const event = eventId ? events.find((e) => e.id === eventId) ?? null : null
 
   const { data: enrichment, isLoading } = trpc.calendar.getEventEnrichment.useQuery(
     { eventId: eventId ?? '' },
@@ -22,13 +37,15 @@ export function EventDetailDrawer({ eventId, onClose }: EventDetailDrawerProps) 
       staleTime: 10 * 60 * 1000,
     },
   )
-  const prep = enrichment?.perEvent ?? null
+  const prepSuggestion = enrichment?.perEvent?.prepSuggestion ?? null
 
   if (!event) return null
 
   const timeLabel = event.start
     ? formatInZone(event.start, zone, 'EEEE, MMM d · h:mm a')
     : event.time
+
+  const description = event.description ? plainText(event.description) : ''
 
   return (
     <aside className="fixed right-0 top-0 h-full w-96 bg-background border-l border-border p-8 overflow-y-auto z-50">
@@ -45,29 +62,27 @@ export function EventDetailDrawer({ eventId, onClose }: EventDetailDrawerProps) 
         {event.location ? ` · ${event.location}` : ''}
       </div>
 
-      <section className="mb-6">
-        <h3 className="text-[10px] uppercase tracking-widest font-semibold text-foreground/40 mb-3">
-          Travel buffer
-        </h3>
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground font-serif italic">Generating…</p>
-        ) : prep?.travelBuffer ? (
-          <p className="text-sm font-serif leading-relaxed">{prep.travelBuffer}</p>
-        ) : (
-          <p className="text-sm text-muted-foreground font-serif italic">No travel advice.</p>
-        )}
-      </section>
+      {description && (
+        <section className="mb-6">
+          <h3 className="text-[10px] uppercase tracking-widest font-semibold text-foreground/40 mb-3">
+            Description
+          </h3>
+          <p className="whitespace-pre-wrap text-sm font-serif leading-relaxed text-foreground/80">
+            {description}
+          </p>
+        </section>
+      )}
 
       <section>
         <h3 className="text-[10px] uppercase tracking-widest font-semibold text-foreground/40 mb-3">
-          Prep suggestion
+          AI notes
         </h3>
         {isLoading ? (
           <p className="text-sm text-muted-foreground font-serif italic">Generating…</p>
-        ) : prep?.prepSuggestion ? (
-          <p className="text-sm font-serif leading-relaxed">{prep.prepSuggestion}</p>
+        ) : prepSuggestion ? (
+          <p className="text-sm font-serif leading-relaxed">{prepSuggestion}</p>
         ) : (
-          <p className="text-sm text-muted-foreground font-serif italic">No prep needed.</p>
+          <p className="text-sm text-muted-foreground font-serif italic">Nothing to prep.</p>
         )}
       </section>
     </aside>

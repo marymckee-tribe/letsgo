@@ -10,7 +10,6 @@ import { fetchCalendarEvents } from '@/lib/server/calendar-fetcher'
 import { listCalendarMappings } from '@/lib/server/calendar-mappings'
 
 const PrepNotesSchema = z.object({
-  travelBuffer: z.string().nullable(),
   prepSuggestion: z.string().nullable(),
 })
 
@@ -90,10 +89,6 @@ export const calendarRouter = router({
         if (!target) {
           throw new TRPCError({ code: 'NOT_FOUND', message: `Event ${input.eventId} not found` })
         }
-        const sameDay = events
-          .filter(e => e.id !== target.id && e.start?.slice(0, 10) === target.start?.slice(0, 10))
-          .map(e => ({ title: e.title, start: e.start, end: e.end, location: e.location }))
-
         const prompt = `You are a Chief of Staff AI helping Mary prepare for an upcoming calendar event.
 
 TARGET EVENT:
@@ -101,15 +96,12 @@ Title: ${target.title}
 Start: ${target.start}
 End: ${target.end ?? 'unknown'}
 Location: ${target.location ?? 'unknown'}
+Description: ${'description' in target && typeof (target as { description?: unknown }).description === 'string' ? (target as { description?: string }).description : 'none'}
 
-OTHER EVENTS ON THE SAME DAY (for travel-buffer reasoning):
-${JSON.stringify(sameDay, null, 2)}
+Produce one short string:
+- prepSuggestion — one concrete action Mary should take before this event (documents to bring, pre-read, agenda item, who's attending, etc). Null if nothing meaningful beyond the title itself.
 
-Produce two short strings:
-1. travelBuffer — leave-by advice accounting for the previous/next event on the same day and the target location. Null if no location or no travel implication.
-2. prepSuggestion — one concrete action Mary should take before this event (documents to bring, pre-read, agenda item). Null if nothing meaningful.
-
-Be terse. No preamble. Mary reads these in a 96-px-wide sidebar.`
+Be terse. No preamble. Mary reads this in a drawer; keep it to a single useful sentence.`
 
         const { object } = await generateObject({
           model: openai('gpt-4o-mini'),
