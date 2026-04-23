@@ -126,18 +126,39 @@ export const inboxRouter = router({
       }
     })
 
-    // Phase 4: seed/merge per-email Firestore state
+    // Phase 4: seed/merge per-email Firestore state.
+    // The commit procedures read the full action back from Firestore (via
+    // action-resolver) without re-running the digest, so the stored shape must
+    // carry type/title/date/time/context/sourceQuote — not just id+status.
+    const buildStoredActions = (
+      emailActions: (typeof digested)[number]['suggestedActions'],
+      storedById: Map<string, StoredAction>,
+    ): StoredAction[] =>
+      emailActions.map((a) => {
+        const s = storedById.get(a.id)
+        return {
+          id: a.id,
+          type: a.type,
+          title: a.title,
+          date: a.date,
+          time: a.time,
+          context: a.context,
+          sourceQuote: a.sourceQuote,
+          confidence: a.confidence,
+          status: s?.status ?? 'PROPOSED',
+          ...(s?.googleId ? { googleId: s.googleId } : {}),
+          ...(s?.errorMessage ? { errorMessage: s.errorMessage } : {}),
+        } as StoredAction
+      })
+
     const merged = await Promise.all(digested.map(async (email) => {
       const stored = await getEmailState(ctx.uid, email.id)
       if (!stored) {
-        // First read — seed with UNREAD + all actions PROPOSED
+        // First read — seed with UNREAD + full action payload at PROPOSED
         const seedDoc: StoredEmail = {
           id: email.id,
           hubStatus: 'UNREAD',
-          suggestedActions: email.suggestedActions.map((a) => ({
-            id: a.id,
-            status: 'PROPOSED' as const,
-          })),
+          suggestedActions: buildStoredActions(email.suggestedActions, new Map()),
         }
         await upsertEmailState(ctx.uid, seedDoc)
         return { ...email, hubStatus: 'UNREAD' as const }
@@ -146,6 +167,18 @@ export const inboxRouter = router({
       const storedById = new Map<string, StoredAction>(
         (stored.suggestedActions ?? []).map((a) => [a.id, a]),
       )
+      // Self-heal: if any stored action is missing `type` (docs seeded before this fix),
+      // rewrite the full shape so commit procedures can read it.
+      const needsBackfill = (stored.suggestedActions ?? []).some(
+        (a) => typeof (a as { type?: unknown }).type !== 'string',
+      )
+      if (needsBackfill) {
+        await upsertEmailState(ctx.uid, {
+          id: email.id,
+          hubStatus: stored.hubStatus,
+          suggestedActions: buildStoredActions(email.suggestedActions, storedById),
+        })
+      }
       const mergedActions = email.suggestedActions.map((a) => {
         const s = storedById.get(a.id)
         if (!s) return a

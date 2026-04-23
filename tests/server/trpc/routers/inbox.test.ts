@@ -89,6 +89,18 @@ describe('inbox router (Phase 2)', () => {
     expect(e.accountEmail).toBe('mary@tribe.ai')
     // Phase 4: upsertEmailState seeded once per digested email (first-read path)
     expect(emailsStore.upsertEmailState).toHaveBeenCalledTimes(1)
+    // Phase 4: seed doc must carry the full action payload (type/title/date/time/sourceQuote),
+    // not just id+status — commit procedures read this back from Firestore without re-running digest.
+    const [, seedDoc] = (emailsStore.upsertEmailState as jest.Mock).mock.calls[0]
+    expect(seedDoc.suggestedActions[0]).toEqual(
+      expect.objectContaining({
+        id: expect.any(String),
+        type: 'CALENDAR_EVENT',
+        title: expect.any(String),
+        sourceQuote: 'Zoo trip Thursday 8am.',
+        status: 'PROPOSED',
+      }),
+    )
   })
 
   it('returns empty array when no accounts return emails (does not call the LLM)', async () => {
