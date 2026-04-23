@@ -1,5 +1,6 @@
 import { router } from './index'
 import { accountsRouter } from './routers/accounts'
+import { actionsRouter } from './routers/actions'
 import { authRouter } from './routers/auth'
 import { calendarRouter } from './routers/calendar'
 import { calendarsRouter } from './routers/calendars'
@@ -10,6 +11,7 @@ import { tasksRouter } from './routers/tasks'
 
 export const appRouter = router({
   accounts: accountsRouter,
+  actions: actionsRouter,
   auth: authRouter,
   calendar: calendarRouter,
   calendars: calendarsRouter,
