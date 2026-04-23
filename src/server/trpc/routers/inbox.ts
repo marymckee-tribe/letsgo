@@ -15,6 +15,15 @@ import {
 } from '@/lib/server/digest-prompt'
 import { ClassifiedEmailsSchema } from '@/lib/server/classification-schema'
 import { setHubStatus, getHubStatusMap } from '@/lib/server/inbox-status'
+import { getEmailState, upsertEmailState } from '@/lib/server/emails-store'
+import type { StoredEmail, StoredAction, StoredActionStatus } from '@/lib/server/emails-store'
+import type { EmailActionStatus } from '@/lib/store'
+
+/** Map internal StoredActionStatus → wire-safe EmailActionStatus (DISMISSED_BY_CLEAR collapses to DISMISSED). */
+function toWireStatus(s: StoredActionStatus): EmailActionStatus {
+  if (s === 'DISMISSED_BY_CLEAR') return 'DISMISSED'
+  return s
+}
 
 const DEFAULT_TIMEZONE = process.env.HUB_DEFAULT_TIMEZONE ?? 'America/New_York'
 
@@ -110,7 +119,35 @@ export const inboxRouter = router({
       }
     })
 
-    return { emails: digested }
+    // Phase 4: seed/merge per-email Firestore state
+    const merged = await Promise.all(digested.map(async (email) => {
+      const stored = await getEmailState(ctx.uid, email.id)
+      if (!stored) {
+        // First read — seed with UNREAD + all actions PROPOSED
+        const seedDoc: StoredEmail = {
+          id: email.id,
+          hubStatus: 'UNREAD',
+          suggestedActions: email.suggestedActions.map((a) => ({
+            id: a.id,
+            status: 'PROPOSED' as const,
+          })),
+        }
+        await upsertEmailState(ctx.uid, seedDoc)
+        return { ...email, hubStatus: 'UNREAD' as const }
+      }
+      // Subsequent reads — prefer stored hubStatus and per-action status/googleId
+      const storedById = new Map<string, StoredAction>(
+        (stored.suggestedActions ?? []).map((a) => [a.id, a]),
+      )
+      const mergedActions = email.suggestedActions.map((a) => {
+        const s = storedById.get(a.id)
+        if (!s) return a
+        return { ...a, status: toWireStatus(s.status), ...(s.googleId ? { googleId: s.googleId } : {}) }
+      })
+      return { ...email, hubStatus: stored.hubStatus, suggestedActions: mergedActions }
+    }))
+
+    return { emails: merged }
   }),
 
   markCleared: protectedProcedure
