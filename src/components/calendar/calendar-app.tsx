@@ -1,5 +1,10 @@
 "use client"
 
+// Schedule-X's bundle uses `Temporal` as a bare global reference (no import).
+// Install the polyfill on globalThis before any Schedule-X module runs, so
+// `instanceof Temporal.ZonedDateTime` checks inside the library succeed.
+import 'temporal-polyfill/global'
+
 import { useEffect, useMemo } from 'react'
 import { ScheduleXCalendar, useCalendarApp } from '@schedule-x/react'
 import { createViewDay, createViewWeek, createViewMonthGrid } from '@schedule-x/calendar'
