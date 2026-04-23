@@ -1,0 +1,33 @@
+/* src/styles/schedule-x-theme.css
+   Overrides Schedule-X CSS variables to match the sorbet palette.
+   Variable names confirmed against @schedule-x/theme-default v4 which
+   defines these on :root (and .is-dark for dark mode), NOT on
+   .sx-react-calendar-wrapper. The plan template's selector was incorrect;
+   :root overrides take precedence correctly here. */
+
+:root {
+  --sx-color-primary: var(--color-foreground);
+  --sx-color-on-primary: var(--color-background);
+  --sx-color-primary-container: var(--color-card);
+  --sx-color-on-primary-container: var(--color-foreground);
+  --sx-color-surface: var(--color-background);
+  --sx-color-on-surface: var(--color-foreground);
+  --sx-color-surface-container: var(--color-card);
+  --sx-color-outline: var(--color-border);
+  --sx-color-outline-variant: var(--color-border);
+  --sx-color-background: var(--color-background);
+  --sx-internal-color-text: var(--color-foreground);
+}
+
+/* Remove decorative border on the calendar wrapper */
+.sx__calendar-wrapper {
+  border: none;
+}
+
+/* Inherit app font and tighten tracking to match sorbet type system */
+.sx__calendar-wrapper *,
+.sx__date-picker-wrapper * {
+  font-family: inherit;
+  font-feature-settings: normal;
+  letter-spacing: -0.01em;
+}
