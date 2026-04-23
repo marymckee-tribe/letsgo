@@ -13,6 +13,7 @@ export const calendarRouter = router({
     const mappingMap = new Map<string, string | null>(
       mappings.map(m => [m.calendarId, m.profileId]),
     )
+    const hiddenCalendarIds = new Set(mappings.filter(m => m.visible === false).map(m => m.calendarId))
     const results = await Promise.all(accounts.map(async (acc) => {
       try {
         const rt = await getDecryptedRefreshToken(uid, acc.id)
@@ -32,6 +33,7 @@ export const calendarRouter = router({
     const errors = results.flatMap(r => (!Array.isArray(r) && '_error' in r ? [r._error] : []))
     const seen = new Set<string>()
     const events = allEvents.filter(e => {
+      if (hiddenCalendarIds.has(e.calendarId)) return false
       const dedupeKey = e.iCalUID || e.id
       if (!dedupeKey || seen.has(dedupeKey)) return false
       seen.add(dedupeKey)
