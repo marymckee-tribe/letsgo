@@ -405,7 +405,19 @@ export function useClearEmail() {
         if (!old) return old
         return {
           ...old,
-          emails: old.emails.map((e) => (e.id === emailId ? { ...e, hubStatus: 'CLEARED' as const } : e)),
+          emails: old.emails.map((e) =>
+            e.id !== emailId
+              ? e
+              : {
+                  ...e,
+                  hubStatus: 'CLEARED' as const,
+                  suggestedActions: e.suggestedActions.map((a) =>
+                    a.status === 'PROPOSED' || a.status === 'EDITING'
+                      ? { ...a, status: 'DISMISSED' as const }
+                      : a,
+                  ),
+                },
+          ),
         }
       })
       return { previous }

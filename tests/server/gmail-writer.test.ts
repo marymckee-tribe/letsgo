@@ -1,4 +1,4 @@
-import { markMessageRead, GmailWriteError } from '@/lib/server/gmail-writer'
+import { markMessageRead } from '@/lib/server/gmail-writer'
 
 describe('gmail-writer', () => {
   const originalFetch = global.fetch
