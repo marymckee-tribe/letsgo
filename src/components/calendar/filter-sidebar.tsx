@@ -1,6 +1,5 @@
 "use client"
 
-import { trpc } from '@/lib/trpc/client'
 import { useHub } from '@/lib/store'
 
 export interface FilterSidebarProps {
@@ -10,18 +9,6 @@ export interface FilterSidebarProps {
 
 export function FilterSidebar({ activeProfiles, onToggleProfile }: FilterSidebarProps) {
   const { profiles } = useHub()
-  const { data: calendarsData } = trpc.calendars.list.useQuery()
-  const utils = trpc.useUtils()
-  const setVisibility = trpc.calendars.setVisibility.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.calendars.list.invalidate(),
-        utils.calendar.list.invalidate(),
-      ])
-    },
-  })
-
-  const calendars = calendarsData?.calendars ?? []
 
   return (
     <aside className="w-60 shrink-0 border-r border-border pr-6 flex flex-col gap-8">
@@ -30,7 +17,7 @@ export function FilterSidebar({ activeProfiles, onToggleProfile }: FilterSidebar
           People
         </h3>
         <ul className="flex flex-col gap-2">
-          {profiles.map(p => {
+          {profiles.map((p) => {
             const active = activeProfiles.size === 0 || activeProfiles.has(p.id)
             return (
               <li key={p.id}>
@@ -48,33 +35,13 @@ export function FilterSidebar({ activeProfiles, onToggleProfile }: FilterSidebar
         </ul>
       </section>
 
-      <section>
-        <h3 className="text-[10px] uppercase tracking-widest font-semibold text-foreground/40 mb-3">
-          Calendars
-        </h3>
-        <ul className="flex flex-col gap-2">
-          {calendars.map(c => (
-            <li key={c.calendarId} className="flex items-start gap-2">
-              <input
-                type="checkbox"
-                checked={c.visible}
-                disabled={setVisibility.isPending}
-                onChange={(e) => setVisibility.mutate({
-                  calendarId: c.calendarId,
-                  visible: e.target.checked,
-                })}
-                className="mt-1"
-              />
-              <div className="text-sm leading-tight">
-                <div className={c.visible ? 'text-foreground' : 'text-foreground/40'}>
-                  {c.calendarName}
-                </div>
-                <div className="text-[10px] font-mono text-foreground/30">{c.accountEmail}</div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <p className="text-[10px] leading-relaxed text-foreground/40">
+        Calendar visibility and colors live in{' '}
+        <a href="/settings" className="underline decoration-foreground/30 hover:text-foreground">
+          Settings → Calendars
+        </a>
+        .
+      </p>
     </aside>
   )
 }

@@ -57,10 +57,15 @@ export function EventDetailDrawer({ eventId, onClose }: EventDetailDrawerProps) 
       </button>
 
       <h2 className="font-heading text-3xl font-light tracking-tighter mb-2">{event.title}</h2>
-      <div className="text-xs font-mono text-foreground/40 mb-6">
+      <div className="text-xs font-mono text-foreground/40 mb-1">
         {timeLabel}
         {event.location ? ` · ${event.location}` : ''}
       </div>
+      {event.calendarName && (
+        <div className="mb-6 text-[10px] uppercase tracking-widest text-foreground/50">
+          {event.calendarName}
+        </div>
+      )}
 
       {description && (
         <section className="mb-6">
