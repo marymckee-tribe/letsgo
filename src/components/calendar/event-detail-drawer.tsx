@@ -48,7 +48,7 @@ export function EventDetailDrawer({ eventId, onClose }: EventDetailDrawerProps) 
   const description = event.description ? plainText(event.description) : ''
 
   return (
-    <aside className="fixed right-0 top-0 h-full w-96 bg-background border-l border-border p-8 overflow-y-auto z-50">
+    <aside className="fixed right-0 top-0 h-full w-96 bg-background border-l border-border p-8 overflow-y-auto z-[200] shadow-2xl">
       <button
         onClick={onClose}
         className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground hover:text-foreground mb-6"
