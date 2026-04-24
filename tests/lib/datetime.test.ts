@@ -38,7 +38,9 @@ describe('datetime', () => {
   describe('userTimeZone', () => {
     it('returns a valid IANA zone string', () => {
       const zone = userTimeZone()
-      expect(zone).toMatch(/^[A-Za-z_]+\/[A-Za-z_]+/)
+      // IANA zones are either "Region/City" (e.g. "America/Los_Angeles") or a
+      // bare identifier like "UTC" (common in CI / node runtimes without Intl data).
+      expect(zone).toMatch(/^(UTC|[A-Za-z_]+\/[A-Za-z_]+)/)
     })
   })
 })
