@@ -1,0 +1,71 @@
+import { calendarsRouter } from '@/server/trpc/routers/calendars'
+import { listAccounts, getDecryptedRefreshToken } from '@/lib/server/accounts'
+import { refreshAccessToken } from '@/lib/server/google-oauth'
+import { listCalendarMappings, setCalendarMapping } from '@/lib/server/calendar-mappings'
+import { TRPCError } from '@trpc/server'
+
+jest.mock('@/lib/server/accounts')
+jest.mock('@/lib/server/google-oauth')
+jest.mock('@/lib/server/calendar-mappings')
+
+describe('calendars router — color', () => {
+  const originalFetch = global.fetch
+  afterEach(() => { global.fetch = originalFetch })
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    ;(listAccounts as jest.Mock).mockResolvedValue([{ id: 'a1', email: 'mary@tribe.ai' }])
+    ;(getDecryptedRefreshToken as jest.Mock).mockResolvedValue('rt')
+    ;(refreshAccessToken as jest.Mock).mockResolvedValue({ accessToken: 'at', expiresAt: 0 })
+    ;(setCalendarMapping as jest.Mock).mockResolvedValue(undefined)
+  })
+
+  it('list emits color=null for calendars with no mapping', async () => {
+    ;(listCalendarMappings as jest.Mock).mockResolvedValue([])
+    global.fetch = jest.fn().mockResolvedValue({
+      json: async () => ({ items: [{ id: 'cal1', summary: 'Mary', selected: true, accessRole: 'owner' }] }),
+    }) as unknown as typeof fetch
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const caller = calendarsRouter.createCaller({ uid: 'mary-uid' } as any)
+    const { calendars } = await caller.list()
+    expect(calendars[0].color).toBeNull()
+  })
+
+  it('list emits the stored color when present', async () => {
+    ;(listCalendarMappings as jest.Mock).mockResolvedValue([
+      { calendarId: 'cal1', accountId: 'a1', calendarName: 'Mary', profileId: null, visible: true, color: 'purple', updatedAt: 1 },
+    ])
+    global.fetch = jest.fn().mockResolvedValue({
+      json: async () => ({ items: [{ id: 'cal1', summary: 'Mary', selected: true, accessRole: 'owner' }] }),
+    }) as unknown as typeof fetch
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const caller = calendarsRouter.createCaller({ uid: 'mary-uid' } as any)
+    const { calendars } = await caller.list()
+    expect(calendars[0].color).toBe('purple')
+  })
+
+  it('setColor persists the color and preserves profileId + visible', async () => {
+    ;(listCalendarMappings as jest.Mock).mockResolvedValue([
+      { calendarId: 'cal1', accountId: 'a1', calendarName: 'Mary', profileId: 'mary', visible: false, color: null, updatedAt: 1 },
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const caller = calendarsRouter.createCaller({ uid: 'mary-uid' } as any)
+    await caller.setColor({ calendarId: 'cal1', colorId: 'teal' })
+    expect(setCalendarMapping).toHaveBeenCalledWith('mary-uid', expect.objectContaining({
+      calendarId: 'cal1',
+      accountId: 'a1',
+      calendarName: 'Mary',
+      profileId: 'mary',
+      visible: false,
+      color: 'teal',
+    }))
+  })
+
+  it('setColor throws NOT_FOUND when the mapping does not exist', async () => {
+    ;(listCalendarMappings as jest.Mock).mockResolvedValue([])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const caller = calendarsRouter.createCaller({ uid: 'mary-uid' } as any)
+    await expect(caller.setColor({ calendarId: 'does-not-exist', colorId: 'blue' }))
+      .rejects.toThrow(TRPCError)
+  })
+})

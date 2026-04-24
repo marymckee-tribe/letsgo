@@ -7,6 +7,8 @@ export interface CalendarMapping {
   calendarName: string
   profileId: string | null
   updatedAt: number
+  visible?: boolean
+  color?: string | null
 }
 
 function col(uid: string) {
@@ -15,7 +17,14 @@ function col(uid: string) {
 
 export async function listCalendarMappings(uid: string): Promise<CalendarMapping[]> {
   const snap = await col(uid).get()
-  return snap.docs.map(d => d.data() as CalendarMapping)
+  return snap.docs.map(d => {
+    const data = d.data() as CalendarMapping
+    return {
+      ...data,
+      visible: data.visible ?? true,
+      color: data.color ?? null,
+    }
+  })
 }
 
 export async function getCalendarMapping(uid: string, calendarId: string): Promise<CalendarMapping | null> {
@@ -26,7 +35,7 @@ export async function getCalendarMapping(uid: string, calendarId: string): Promi
 
 export async function setCalendarMapping(
   uid: string,
-  input: { calendarId: string; accountId: string; calendarName: string; profileId: string | null },
+  input: { calendarId: string; accountId: string; calendarName: string; profileId: string | null; visible?: boolean; color?: string },
 ): Promise<void> {
   const record: CalendarMapping = {
     calendarId: input.calendarId,
@@ -34,6 +43,8 @@ export async function setCalendarMapping(
     calendarName: input.calendarName,
     profileId: input.profileId,
     updatedAt: Date.now(),
+    visible: input.visible ?? true,
+    color: input.color ?? null,
   }
   await col(uid).doc(input.calendarId).set(record)
 }

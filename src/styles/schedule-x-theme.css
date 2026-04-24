@@ -1,0 +1,253 @@
+/* src/styles/schedule-x-theme.css
+   Schedule-X v4 overrides — Google-Calendar-inspired, soft + refined.
+   Near-white surfaces, near-transparent grid lines, soft blue accents,
+   restrained type hierarchy. */
+
+:root {
+  --sx-color-primary: #1a73e8;
+  --sx-color-on-primary: #ffffff;
+  --sx-color-primary-container: #e8f0fe;
+  --sx-color-on-primary-container: #174ea6;
+
+  --sx-color-secondary: #5f6368;
+  --sx-color-on-secondary: #ffffff;
+  --sx-color-secondary-container: #f1f3f4;
+  --sx-color-on-secondary-container: #202124;
+
+  --sx-color-tertiary: #1a73e8;
+  --sx-color-on-tertiary: #ffffff;
+  --sx-color-tertiary-container: #e8f0fe;
+  --sx-color-on-tertiary-container: #174ea6;
+
+  --sx-color-surface: #ffffff;
+  --sx-color-surface-dim: #fbfbfc;
+  --sx-color-surface-bright: #ffffff;
+  --sx-color-on-surface: #3c4043;
+  --sx-color-surface-container: #ffffff;
+  --sx-color-surface-container-low: #fafbfc;
+  --sx-color-surface-container-high: #f6f8fa;
+  --sx-color-background: #ffffff;
+  --sx-color-on-background: #3c4043;
+
+  --sx-color-outline: #e5e7eb;
+  --sx-color-outline-variant: #f1f3f4;
+
+  --sx-color-shadow: rgb(60 64 67 / 0.18);
+  --sx-color-surface-tint: #1a73e8;
+  --sx-color-neutral: var(--sx-color-outline);
+  --sx-color-neutral-variant: var(--sx-color-outline-variant);
+
+  --sx-internal-color-gray-ripple-background: #e8eaed;
+  --sx-internal-color-light-gray: #fafbfc;
+  --sx-internal-color-text: #3c4043;
+}
+
+/* Wrapper: no border, rounded corners, app background. */
+.sx__calendar-wrapper,
+.sx-react-calendar-wrapper {
+  border: none;
+  background: #ffffff;
+  color: #3c4043;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Inherit app fonts; restrained size + tracking */
+.sx__calendar-wrapper *,
+.sx__date-picker-wrapper * {
+  font-family: inherit;
+  font-feature-settings: 'tnum' on, 'lnum' on;
+  letter-spacing: 0;
+}
+
+/* ----- Top bar ----- */
+
+.sx__calendar-header {
+  border-bottom: 1px solid #f1f3f4 !important;
+  padding: 0.75rem 1rem !important;
+}
+
+.sx__range-heading {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #3c4043;
+}
+
+.sx__today-button,
+.sx__view-selection-selected-item,
+.sx__view-selection-item {
+  border-radius: 9999px !important;
+  font-weight: 500;
+  font-size: 0.8125rem;
+  letter-spacing: 0;
+  padding: 0.375rem 0.875rem !important;
+}
+
+.sx__today-button {
+  border: 1px solid #dadce0 !important;
+  background: transparent !important;
+  color: #3c4043 !important;
+}
+.sx__today-button:hover {
+  background: #f8f9fa !important;
+}
+
+/* Arrow buttons: subtle */
+.sx__forward-backward-navigation button {
+  color: #5f6368 !important;
+}
+.sx__forward-backward-navigation button:hover {
+  background: #f1f3f4 !important;
+}
+
+/* ----- Week / day grid ----- */
+
+.sx__time-grid-hour,
+.sx__week-grid__hour,
+.sx__date-grid-cell,
+.sx__month-grid-cell,
+.sx__week-grid__day {
+  border-color: #f1f3f4 !important;
+}
+
+/* Hour labels */
+.sx__time-grid__hour-text,
+.sx__week-grid__hour-text {
+  color: #70757a !important;
+  font-size: 0.6875rem !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.02em !important;
+}
+
+/* Day header: "Mon 22" */
+.sx__week-grid__date,
+.sx__date-grid__date,
+.sx__week-header,
+.sx__week-grid__day-name {
+  font-weight: 500;
+  color: #5f6368;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sx__week-grid__date-number,
+.sx__date-grid__date-number {
+  font-weight: 400;
+  font-size: 1.375rem;
+  color: #3c4043;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  line-height: 1.8rem;
+}
+
+/* TODAY — circled blue date number */
+.sx__week-grid__date--today .sx__week-grid__date-number,
+.sx__date-grid__date--today .sx__date-grid__date-number {
+  background: #1a73e8 !important;
+  color: #ffffff !important;
+  border-radius: 9999px;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 500;
+  font-size: 1.0625rem;
+}
+
+/* Current-time red line */
+.sx__time-indicator,
+.sx__current-time-indicator {
+  background: #ea4335 !important;
+  height: 2px !important;
+}
+.sx__time-indicator::before,
+.sx__current-time-indicator::before {
+  background: #ea4335 !important;
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 9999px !important;
+  border: none !important;
+}
+
+/* ----- Event chips ----- */
+
+.sx__event,
+.sx__time-grid-event,
+.sx__week-grid-event,
+.sx__month-grid-event {
+  background: #e8f0fe !important;
+  color: #174ea6 !important;
+  border: none !important;
+  border-left: 3px solid #1a73e8 !important;
+  border-radius: 4px !important;
+  padding: 2px 6px !important;
+  font-size: 0.75rem !important;
+  line-height: 1.2 !important;
+  box-shadow: none !important;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.sx__event:hover,
+.sx__time-grid-event:hover,
+.sx__week-grid-event:hover,
+.sx__month-grid-event:hover {
+  background: #d2e3fc !important;
+  box-shadow: 0 1px 2px rgb(60 64 67 / 0.18) !important;
+  cursor: pointer;
+}
+
+.sx__event__title,
+.sx__event-title,
+.sx__time-grid-event__title {
+  font-weight: 500 !important;
+  color: inherit !important;
+}
+
+.sx__event__time,
+.sx__event-time,
+.sx__time-grid-event__time {
+  font-weight: 400 !important;
+  opacity: 0.72;
+  font-size: 0.6875rem !important;
+}
+
+/* ----- Month view polish ----- */
+
+.sx__month-grid-day {
+  background: #ffffff !important;
+}
+
+.sx__month-grid-day--weekend,
+.sx__week-grid__day--weekend {
+  background: #fafbfc !important;
+}
+
+.sx__month-grid-day__header-day-name {
+  font-weight: 400;
+  font-size: 0.8125rem;
+  color: #5f6368;
+}
+
+.sx__month-grid-day--other-month {
+  color: #bdc1c6 !important;
+}
+
+.sx__month-grid-weekday,
+.sx__week-grid__weekday {
+  color: #5f6368;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.5rem 0.25rem !important;
+}
+
+/* ----- Focus ----- */
+
+.sx__calendar-wrapper button:focus-visible,
+.sx__calendar-wrapper [tabindex]:focus-visible {
+  outline: 2px solid #1a73e8 !important;
+  outline-offset: 2px;
+}

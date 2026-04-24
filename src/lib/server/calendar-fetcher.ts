@@ -7,6 +7,7 @@ export interface CalendarEventRaw {
   start: string | undefined
   end: string | undefined
   location: string | undefined
+  description: string | undefined
   calendarId: string
   calendarName: string | undefined
 }
@@ -15,6 +16,7 @@ interface GoogleCalendarEvent {
   id: string
   iCalUID?: string
   summary?: string
+  description?: string
   start?: { dateTime?: string; date?: string }
   end?: { dateTime?: string; date?: string }
   location?: string
@@ -56,6 +58,7 @@ export async function fetchCalendarEvents(accessToken: string): Promise<Calendar
         start: e.start?.dateTime || e.start?.date,
         end: e.end?.dateTime || e.end?.date,
         location: e.location,
+        description: e.description,
         calendarId: cal.id,
         calendarName: cal.summary,
       }))
