@@ -1,37 +1,22 @@
-import { BrainDump } from "@/components/widgets/brain-dump";
-import { CommandCenter } from "@/components/widgets/command-center";
-import { Bouncer } from "@/components/widgets/bouncer";
-import { DashboardCards } from "@/components/widgets/dashboard-cards";
+import { TodayBand } from "@/components/life-hub/today-band";
+import { PrioritiesColumn } from "@/components/life-hub/priorities-column";
+import { ShapesColumn } from "@/components/life-hub/shapes-column";
+import { ChiefOfStaff } from "@/components/life-hub/chief-of-staff";
 
 export default function Home() {
   return (
-    <main className="flex-1 min-h-screen w-full bg-background text-foreground flex flex-col">
-      <h1 className="sr-only">The Hub</h1>
-      {/* 80% Data Area */}
-      <div className="flex-1 p-12 lg:p-24 overflow-hidden">
-        <div className="mx-auto max-w-[1600px] h-full grid grid-cols-1 lg:grid-cols-12 gap-16 lg:gap-24">
-          
-          <div className="lg:col-span-5 flex flex-col h-full min-h-0">
-            <CommandCenter className="flex-1 min-h-0" />
+    <>
+      <main className="flex-1 w-full bg-background text-foreground flex flex-col pb-[180px]">
+        <h1 className="sr-only">The Hub — Life Hub home</h1>
+        <div className="max-w-[1600px] w-full mx-auto px-8 pt-5 pb-4 flex flex-col gap-[18px]">
+          <TodayBand />
+          <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-9">
+            <PrioritiesColumn />
+            <ShapesColumn />
           </div>
-
-          <div className="lg:col-span-4 flex flex-col h-full min-h-0">
-             <Bouncer className="flex-1 min-h-0" />
-          </div>
-          
-          <div className="lg:col-span-3 flex flex-col h-full min-h-0">
-            <DashboardCards className="flex-1 min-h-0" />
-          </div>
-
         </div>
-      </div>
-
-      {/* 20% Command Bar */}
-      <div className="shrink-0 border-t border-border p-12 lg:px-24 bg-background">
-        <div className="mx-auto max-w-[1600px]">
-          <BrainDump />
-        </div>
-      </div>
-    </main>
+      </main>
+      <ChiefOfStaff />
+    </>
   );
 }

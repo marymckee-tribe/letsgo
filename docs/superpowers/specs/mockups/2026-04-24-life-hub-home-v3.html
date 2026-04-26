@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Hub — Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@200;300;400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Cormorant+Garamond:ital,wght@0,400;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg:            #ffffff;
+    --fg:            #1a1a1a;
+    --muted:         color-mix(in srgb, black 5%, transparent);
+    --muted-fg:      color-mix(in srgb, black 58%, transparent);
+    --border:        color-mix(in srgb, black 8%, transparent);
+    --border-strong: color-mix(in srgb, black 18%, transparent);
+
+    --nav:           #fff9f9;
+    --accent:        #d65a6b;
+    --accent-8:      color-mix(in srgb, #d65a6b 8%, transparent);
+    --accent-20:     color-mix(in srgb, #d65a6b 20%, transparent);
+
+    --font-sans:     'DM Sans', -apple-system, sans-serif;
+    --font-heading:  'Jost', -apple-system, sans-serif;
+    --font-serif:    'Cormorant Garamond', Georgia, serif;
+    --font-mono:     'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; border: 0 solid var(--border); }
+  html, body { height: 100%; }
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+  body {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--fg);
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 140px;    /* space for sticky terminal */
+  }
+  button { font: inherit; color: inherit; background: none; cursor: pointer; }
+  ul, ol { list-style: none; }
+
+  /* ─── Top nav ────────────────────────────────────────── */
+  .topnav {
+    background: var(--nav);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .topnav-brand {
+    display: flex; align-items: center; gap: 12px;
+    font-family: var(--font-heading);
+    font-weight: 300;
+    font-size: 19px;
+    letter-spacing: -0.02em;
+  }
+  .topnav-brand .mark { color: var(--accent); font-size: 17px; line-height: 1; }
+  .topnav-links { display: flex; gap: 26px; }
+  .topnav-links a {
+    font-family: var(--font-sans);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--muted-fg);
+    padding: 4px 0;
+    border-bottom: 1px solid transparent;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .topnav-links a:hover { color: var(--fg); }
+  .topnav-links a.active { color: var(--fg); border-color: var(--fg); }
+  .topnav-right {
+    display: flex; align-items: center; gap: 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted-fg);
+    letter-spacing: 0.04em;
+  }
+  .topnav-right .sep { width: 1px; height: 11px; background: var(--border-strong); }
+
+  /* ─── Shell ──────────────────────────────────────────── */
+  .shell {
+    flex: 1;
+    max-width: 1600px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 22px 32px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-height: 0;
+  }
+
+  /* ─── Page head + worth-noticing, unified band ──────── */
+  .band {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 36px;
+    align-items: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .band-head {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .band-head h1 {
+    font-family: var(--font-heading);
+    font-weight: 200;
+    font-size: 52px;
+    line-height: 0.95;
+    letter-spacing: -0.035em;
+    color: var(--fg);
+  }
+  .band-head .sub {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    display: flex; gap: 14px;
+  }
+  .band-head .sub .divider { color: var(--border-strong); }
+
+  .band-note {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 16px;
+    line-height: 1.4;
+    color: color-mix(in srgb, var(--fg) 82%, transparent);
+    border-left: 2px solid var(--accent);
+    padding: 4px 0 4px 20px;
+    max-width: 62ch;
+  }
+  .band-note .kicker {
+    display: block;
+    font-family: var(--font-sans);
+    font-style: normal;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .band-metrics {
+    display: flex; gap: 28px;
+    align-items: flex-end;
+  }
+  .metric {
+    text-align: right;
+    min-width: 70px;
+  }
+  .metric .n {
+    font-family: var(--font-heading);
+    font-weight: 200;
+    font-size: 28px;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    color: var(--fg);
+  }
+  .metric .l {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    margin-top: 5px;
+  }
+  .metric .accent { color: var(--accent); }
+
+  /* ─── Section kicker ─────────────────────────────────── */
+  .kicker {
+    display: flex; align-items: center; gap: 12px;
+    font-family: var(--font-sans);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    margin-bottom: 12px;
+  }
+  .kicker .hash {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+  .kicker .rule { flex: 1; height: 1px; background: var(--border); }
+  .kicker .badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+  }
+
+  /* ─── Main grid ──────────────────────────────────────── */
+  .grid {
+    display: grid;
+    grid-template-columns: 1.35fr 1fr;
+    gap: 36px;
+    flex: 1;
+    min-height: 0;
+  }
+  @media (max-width: 1100px) {
+    .grid { grid-template-columns: 1fr; gap: 24px; }
+  }
+
+  /* ─── Priorities ─────────────────────────────────────── */
+  .priorities { display: flex; flex-direction: column; gap: 0; }
+
+  .priority {
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--accent);
+    padding: 16px 20px 16px;
+    background: var(--bg);
+    margin-bottom: -1px;
+    transition: border-color .15s ease, background .15s ease;
+    position: relative;
+  }
+  .priority:hover { border-color: var(--border-strong); border-left-color: var(--accent); }
+
+  .priority-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 2px;
+  }
+  .priority-type {
+    font-family: var(--font-sans);
+    font-size: 9.5px; font-weight: 700;
+    letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--accent);
+  }
+  .priority-deadline {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--muted-fg);
+    letter-spacing: 0.04em;
+  }
+  .priority-deadline strong { color: var(--fg); font-weight: 500; }
+
+  .priority-title {
+    font-family: var(--font-heading);
+    font-weight: 300;
+    font-size: 21px;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+    margin-bottom: 6px;
+  }
+
+  .priority-meta {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--muted-fg);
+    letter-spacing: 0.02em;
+    margin-bottom: 6px;
+  }
+  .priority-meta .pipe { color: var(--border-strong); margin: 0 7px; }
+
+  .priority-note {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 14px;
+    line-height: 1.4;
+    color: color-mix(in srgb, var(--fg) 78%, transparent);
+    border-left: 2px solid var(--border);
+    padding: 1px 0 1px 14px;
+    margin-bottom: 12px;
+    max-width: 62ch;
+  }
+
+  .priority-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 7px 14px;
+    font-family: var(--font-sans);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+    min-height: 30px;
+  }
+  .btn:hover { background: var(--muted); border-color: var(--border-strong); }
+  .btn--primary {
+    background: var(--fg);
+    color: var(--bg);
+    border-color: var(--fg);
+  }
+  .btn--primary:hover { background: color-mix(in srgb, var(--fg) 85%, transparent); }
+  .btn--quiet {
+    border-color: transparent;
+    color: var(--muted-fg);
+    padding-left: 4px; padding-right: 4px;
+  }
+  .btn--quiet:hover { color: var(--fg); background: transparent; }
+
+  /* ─── Shapes ─────────────────────────────────────────── */
+  .shapes { display: flex; flex-direction: column; gap: 0; }
+
+  .shape {
+    border: 1px solid var(--border);
+    padding: 14px 18px 16px;
+    margin-bottom: -1px;
+    transition: border-color .15s ease;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 16px;
+    align-items: start;
+  }
+  .shape:hover { border-color: var(--border-strong); position: relative; z-index: 1; }
+
+  .shape-meta {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .shape-kind {
+    font-family: var(--font-sans);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+  }
+  .shape-kind .dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: currentColor;
+    margin-right: 7px;
+    vertical-align: 1px;
+  }
+  .shape-kind.--endeavor { color: #3a7a85; }
+  .shape-kind.--season   { color: #a66b2a; }
+  .shape-kind.--rhythm   { color: #3a6b48; }
+  .shape-kind.--thread   { color: #8c4a2b; }
+
+  .shape-age {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--muted-fg);
+    letter-spacing: 0.04em;
+  }
+
+  .shape-title {
+    grid-column: 1 / 2;
+    font-family: var(--font-heading);
+    font-weight: 300;
+    font-size: 22px;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+  }
+
+  .shape-count {
+    grid-column: 2 / 3;
+    text-align: right;
+    font-family: var(--font-heading);
+    font-weight: 200;
+    font-size: 28px;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    color: var(--fg);
+    white-space: nowrap;
+  }
+  .shape-count .unit {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    margin-top: 3px;
+  }
+
+  .shape-data {
+    grid-column: 1 / -1;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: color-mix(in srgb, var(--fg) 72%, transparent);
+    letter-spacing: 0.02em;
+    line-height: 1.65;
+  }
+  .shape-data .pipe { color: var(--border-strong); margin: 0 7px; }
+  .shape-data .ok  { color: #3a6b48; }
+  .shape-data .open{ color: var(--muted-fg); }
+
+  .shape-progress {
+    grid-column: 1 / -1;
+    height: 2px;
+    background: var(--muted);
+    margin-top: 2px;
+  }
+  .shape-progress > span {
+    display: block;
+    height: 100%;
+    background: var(--fg);
+  }
+
+  /* ─── Lists (inside Thread card) ─────────────────────── */
+  .lists {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-top: 4px;
+    border-top: 1px dashed var(--border);
+  }
+  .list-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .list-row:last-child { border-bottom: 0; }
+  .list-name {
+    font-family: var(--font-sans);
+    font-size: 12.5px;
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .list-name em {
+    font-family: var(--font-mono);
+    font-style: normal;
+    font-size: 10.5px;
+    color: var(--muted-fg);
+    margin-left: 4px;
+  }
+  .list-count {
+    font-family: var(--font-heading);
+    font-weight: 300;
+    font-size: 16px;
+    color: var(--fg);
+    min-width: 22px; text-align: right;
+  }
+  .list-last {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--muted-fg);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .list-add {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    border: 1px solid var(--accent-20);
+    padding: 3px 8px;
+    transition: background .12s ease, border-color .12s ease;
+    white-space: nowrap;
+  }
+  .list-add:hover { background: var(--accent-8); border-color: var(--accent); }
+
+  /* ─── Sticky Terminal ────────────────────────────────── */
+  .terminal {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    z-index: 50;
+  }
+  .terminal-inner {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 12px 32px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .terminal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px;
+  }
+  .terminal-title {
+    font-family: var(--font-heading);
+    font-weight: 300;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .terminal-title .mark { color: var(--accent); font-size: 15px; line-height: 1; }
+  .terminal-title .pill {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--accent);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border: 1px solid var(--accent-20);
+    padding: 1px 6px;
+    background: var(--accent-8);
+  }
+
+  /* Proactive agent suggestions */
+  .suggestions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .suggestions::-webkit-scrollbar { display: none; }
+  .suggestion-label {
+    font-family: var(--font-sans);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    white-space: nowrap;
+  }
+  .suggestion {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 5px 10px;
+    white-space: nowrap;
+    transition: border-color .12s ease, background .12s ease;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .suggestion:hover { border-color: var(--accent); background: var(--accent-8); }
+  .suggestion .tag {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+  }
+
+  /* Input + voice */
+  .terminal-input {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 1px solid var(--border);
+    padding: 4px 2px 6px;
+  }
+  .terminal-prompt {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .terminal-input input {
+    font-family: var(--font-sans);
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--fg);
+    background: transparent;
+    border: 0;
+    outline: 0;
+    padding: 4px 0;
+    width: 100%;
+  }
+  .terminal-input input::placeholder { color: var(--muted-fg); }
+
+  .voice {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px 6px 10px;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    transition: background .12s ease, transform .08s ease;
+    cursor: pointer;
+    position: relative;
+  }
+  .voice:hover { background: color-mix(in srgb, var(--accent) 88%, black); }
+  .voice:active { transform: translateY(1px); }
+  .voice .ping {
+    width: 6px; height: 6px; background: #fff; border-radius: 999px;
+    animation: ping 1.6s ease-in-out infinite;
+  }
+  @keyframes ping {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.35; transform: scale(1.4); }
+  }
+  .voice svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+  .enter-key {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted-fg);
+    border: 1px solid var(--border);
+    padding: 3px 7px;
+    letter-spacing: 0.08em;
+  }
+
+  .context-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .context-chip {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted-fg);
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    letter-spacing: 0.03em;
+    transition: color .12s ease, border-color .12s ease, background .12s ease;
+    cursor: pointer;
+  }
+  .context-chip:hover { color: var(--fg); border-color: var(--border-strong); background: var(--nav); }
+
+  /* Mobile */
+  @media (max-width: 720px) {
+    body { padding-bottom: 170px; }
+    .topnav { padding: 12px 18px; flex-wrap: wrap; gap: 12px; }
+    .topnav-links { display: none; }
+    .shell { padding: 16px 18px; }
+    .band { grid-template-columns: 1fr; gap: 14px; }
+    .band-head h1 { font-size: 40px; }
+    .band-metrics { justify-content: flex-start; gap: 20px; }
+    .shape { grid-template-columns: 1fr; }
+    .shape-count { grid-column: 1; text-align: left; }
+    .terminal-inner { padding: 12px 18px 14px; }
+    .terminal-input { grid-template-columns: auto 1fr auto; }
+    .enter-key { display: none; }
+  }
+
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+</style>
+</head>
+
+<body>
+
+  <!-- Top nav ─────────────────────────────────────────── -->
+  <nav class="topnav">
+    <div class="topnav-brand">
+      <span class="mark">◇</span>
+      <span>The Hub</span>
+    </div>
+    <div class="topnav-links">
+      <a href="#" class="active">Home</a>
+      <a href="#">Inbox</a>
+      <a href="#">Calendar</a>
+      <a href="#">Life</a>
+      <a href="#">Settings</a>
+    </div>
+    <div class="topnav-right">
+      <span>MARY · 04:12 WED</span>
+      <span class="sep"></span>
+      <span>3 ACCOUNTS</span>
+      <span class="sep"></span>
+      <span>12 ITEMS</span>
+    </div>
+  </nav>
+
+  <!-- Shell ───────────────────────────────────────────── -->
+  <main class="shell">
+
+    <!-- Page head + worth noticing — unified top band -->
+    <header class="band">
+      <div class="band-head">
+        <h1>Wednesday.</h1>
+        <div class="sub">
+          <span>OCT 23 · 2026</span>
+          <span class="divider">·</span>
+          <span>3 TIME-SENSITIVE</span>
+          <span class="divider">·</span>
+          <span>11 OPEN</span>
+          <span class="divider">·</span>
+          <span>INBOX −6</span>
+        </div>
+      </div>
+
+      <p class="band-note">
+        <span class="kicker">Worth noticing</span>
+        Inbox is 38% lighter than this day last month — you cleared 14 yesterday and routed 3 into Disney planning. The Nov 3 booking window is the only real deadline between now and Thanksgiving.
+      </p>
+
+      <div class="band-metrics">
+        <div class="metric">
+          <span class="n">14</span>
+          <span class="l">cleared yest.</span>
+        </div>
+        <div class="metric">
+          <span class="n">−38<span style="font-size:16px">%</span></span>
+          <span class="l">inbox MoM</span>
+        </div>
+        <div class="metric">
+          <span class="n accent">1</span>
+          <span class="l">hard deadline</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main grid -->
+    <div class="grid">
+
+      <!-- Priorities -->
+      <section style="display: flex; flex-direction: column;">
+        <div class="kicker">
+          <span class="hash">01 /</span>
+          <span>What needs you</span>
+          <span class="rule"></span>
+          <span class="badge">3 items</span>
+        </div>
+
+        <div class="priorities">
+
+          <article class="priority">
+            <div class="priority-head">
+              <span class="priority-type">RSVP · Birthday · Ellie</span>
+              <span class="priority-deadline">DEADLINE <strong>today</strong> · event THU 4 PM</span>
+            </div>
+            <h3 class="priority-title">Ava's 5th — Shem Creek Park</h3>
+            <p class="priority-meta">FROM <span>Amanda Walsh</span> <span class="pipe">·</span> VIA <span>ellie@mckeefamily.com</span> <span class="pipe">·</span> RECEIVED <span>2d ago</span></p>
+            <p class="priority-note">Three of Ellie's class have already confirmed. She's asked about it twice since Saturday.</p>
+            <div class="priority-actions">
+              <button class="btn btn--primary">Yes, we're coming</button>
+              <button class="btn">Decline</button>
+              <button class="btn">Defer to tonight</button>
+              <button class="btn btn--quiet">Draft reply by hand</button>
+            </div>
+          </article>
+
+          <article class="priority">
+            <div class="priority-head">
+              <span class="priority-type">Book · Disney Cruise '27</span>
+              <span class="priority-deadline">OPENS <strong>Nov 3 · 04:00 ET</strong> · in 10 days</span>
+            </div>
+            <h3 class="priority-title">Character dining — Wave 1 locks fast</h3>
+            <p class="priority-meta">ENDEAVOR <span>Disney Cruise 2027</span> <span class="pipe">·</span> CAL HOLD <span>ON</span> <span class="pipe">·</span> HIST <span>sells out &lt; 15 min</span></p>
+            <p class="priority-note">Storybook Dining tops your list. Pirate Night should be ticketed the same morning.</p>
+            <div class="priority-actions">
+              <button class="btn btn--primary">Set alarm Nov 2 · 9 PM</button>
+              <button class="btn">Open booking link</button>
+              <button class="btn">Add Owen to party</button>
+              <button class="btn btn--quiet">Skip, not worth the fight</button>
+            </div>
+          </article>
+
+          <article class="priority">
+            <div class="priority-head">
+              <span class="priority-type">Reply · Thank-you · Mom</span>
+              <span class="priority-deadline">OVERDUE <strong>2d</strong> · your own rule: 5d</span>
+            </div>
+            <h3 class="priority-title">Photos from the care package</h3>
+            <p class="priority-meta">FROM <span>Diane (Mom)</span> <span class="pipe">·</span> THREAD <span>6 msgs</span> <span class="pipe">·</span> LAST <span>Mon 7:14 PM</span></p>
+            <p class="priority-note">She sent pictures of Ellie in the sweater. Half a sentence would land.</p>
+            <div class="priority-actions">
+              <button class="btn btn--primary">Draft a reply</button>
+              <button class="btn">Send a voice note</button>
+              <button class="btn btn--quiet">Skip today</button>
+            </div>
+          </article>
+
+        </div>
+      </section>
+
+      <!-- Shapes -->
+      <aside style="display: flex; flex-direction: column;">
+        <div class="kicker">
+          <span class="hash">02 /</span>
+          <span>Your life</span>
+          <span class="rule"></span>
+          <span class="badge">4 active</span>
+        </div>
+
+        <div class="shapes">
+
+          <article class="shape">
+            <div class="shape-meta">
+              <span class="shape-kind --endeavor"><span class="dot"></span>Endeavor</span>
+              <span class="shape-age">OPENED 3W AGO · $2,400 / $11,900</span>
+            </div>
+            <h4 class="shape-title">Disney Cruise 2027</h4>
+            <div class="shape-count">247<span class="unit">days out</span></div>
+            <p class="shape-data">3/12 booked <span class="pipe">·</span> next: <strong>character dining Nov 3</strong> <span class="pipe">·</span> Owen passport <span class="open">open</span></p>
+            <div class="shape-progress"><span style="width: 25%"></span></div>
+          </article>
+
+          <article class="shape">
+            <div class="shape-meta">
+              <span class="shape-kind --season"><span class="dot"></span>Season · Fall '26</span>
+              <span class="shape-age">RECURS ANNUALLY</span>
+            </div>
+            <h4 class="shape-title">Halloween</h4>
+            <div class="shape-count">8<span class="unit">days</span></div>
+            <p class="shape-data">Ellie <span class="ok">✓ witch</span> <span class="pipe">·</span> Owen <span class="open">○</span> <span class="pipe">·</span> candy <span class="ok">✓</span> <span class="pipe">·</span> carving <span class="open">SAT</span> <span class="pipe">·</span> teacher treat <span class="open">MON</span></p>
+          </article>
+
+          <article class="shape">
+            <div class="shape-meta">
+              <span class="shape-kind --rhythm"><span class="dot"></span>Rhythm · Weekend</span>
+              <span class="shape-age">CHARLESTON · WK 43</span>
+            </div>
+            <h4 class="shape-title">Sat–Sun, Oct 25–26</h4>
+            <div class="shape-count">2<span class="unit">holds</span></div>
+            <p class="shape-data">SAT <span>Spoleto closing · Dewey's 7 PM</span> <span class="pipe">·</span> SUN <span>boat 10–12 · MHT 11:42 · 8 kt</span></p>
+          </article>
+
+          <article class="shape">
+            <div class="shape-meta">
+              <span class="shape-kind --thread"><span class="dot"></span>Thread · Lists</span>
+              <span class="shape-age">6 LISTS · 33 ITEMS</span>
+            </div>
+            <h4 class="shape-title">Lists &amp; Upkeep</h4>
+            <div class="shape-count">33<span class="unit">open</span></div>
+
+            <ul class="lists">
+              <li class="list-row">
+                <span class="list-name">Groceries</span>
+                <span class="list-count">8</span>
+                <span class="list-last">+2 · 1h ago</span>
+                <button class="list-add">+ add</button>
+              </li>
+              <li class="list-row">
+                <span class="list-name">Owen <em>(2T)</em></span>
+                <span class="list-count">3</span>
+                <span class="list-last">+1 · Tue</span>
+                <button class="list-add">+ add</button>
+              </li>
+              <li class="list-row">
+                <span class="list-name">Ellie</span>
+                <span class="list-count">2</span>
+                <span class="list-last">+1 · Mon</span>
+                <button class="list-add">+ add</button>
+              </li>
+              <li class="list-row">
+                <span class="list-name">Christmas gifts '26</span>
+                <span class="list-count">12</span>
+                <span class="list-last">+3 · Sun</span>
+                <button class="list-add">+ add</button>
+              </li>
+              <li class="list-row">
+                <span class="list-name">Thank-yous</span>
+                <span class="list-count">3</span>
+                <span class="list-last">oldest 6d</span>
+                <button class="list-add">+ add</button>
+              </li>
+              <li class="list-row">
+                <span class="list-name">Texts waiting</span>
+                <span class="list-count">5</span>
+                <span class="list-last">Sarah 3d · Jen 2d</span>
+                <button class="list-add">+ note</button>
+              </li>
+            </ul>
+          </article>
+
+        </div>
+      </aside>
+
+    </div>
+
+  </main>
+
+  <!-- Sticky Terminal / Chief of Staff ─────────────────── -->
+  <section class="terminal" aria-label="Chief of Staff">
+    <div class="terminal-inner">
+
+      <div class="terminal-head">
+        <h2 class="terminal-title">
+          <span class="mark">◇</span>
+          <span>Chief of Staff</span>
+          <span class="pill">LIVE</span>
+        </h2>
+
+        <div class="suggestions" aria-label="Proactive suggestions">
+          <span class="suggestion-label">Suggests:</span>
+          <button class="suggestion"><span class="tag">file</span>3 emails into Halloween</button>
+          <button class="suggestion"><span class="tag">draft</span>mom thank-you (voice)</button>
+          <button class="suggestion"><span class="tag">remind</span>Nov 2 · 9 PM · Disney booking</button>
+          <button class="suggestion"><span class="tag">book</span>Sunday boat slot 10 AM</button>
+        </div>
+      </div>
+
+      <form class="terminal-input" onsubmit="return false;">
+        <span class="terminal-prompt">&rsaquo;</span>
+        <input type="text" placeholder="Say or type what you need — “add diapers to Owen's list”, “remind me to book pumpkin carving”, “what's on for Saturday?”">
+        <button type="button" class="voice" aria-label="Hold to speak">
+          <span class="ping" aria-hidden="true"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="9" y="3" width="6" height="12" rx="3"/>
+            <path d="M5 11a7 7 0 0 0 14 0"/>
+            <path d="M12 18v3"/>
+            <path d="M9 21h6"/>
+          </svg>
+          Hold to talk
+        </button>
+        <span class="enter-key">↵</span>
+      </form>
+
+      <div class="context-chips" aria-label="Quick routing contexts">
+        <button class="context-chip">#disney-cruise</button>
+        <button class="context-chip">#halloween</button>
+        <button class="context-chip">#owen</button>
+        <button class="context-chip">#ellie</button>
+        <button class="context-chip">#charleston-weekend</button>
+        <button class="context-chip">#groceries</button>
+        <button class="context-chip">#thank-yous</button>
+        <button class="context-chip">#christmas-gifts</button>
+        <button class="context-chip">+ new shape</button>
+      </div>
+
+    </div>
+  </section>
+
+</body>
+</html>
